@@ -2,6 +2,9 @@
 
 **Built for the Odoo x LPU Jalandhar Hackathon 2026**
 
+🌐 **24/7 Live Web Deployment:** [https://manas0306-ops.github.io/STOCK-SENSE-ODOO-x-LPU/](https://manas0306-ops.github.io/STOCK-SENSE-ODOO-x-LPU/)
+
+![Live Demo](https://img.shields.io/badge/Live_Demo-Active_24%2F7-emerald)
 ![Node.js](https://img.shields.io/badge/Node.js-v24-green)
 ![Express](https://img.shields.io/badge/Express-v4-blue)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-v18-336791)
