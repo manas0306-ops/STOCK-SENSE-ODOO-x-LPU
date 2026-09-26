@@ -8,6 +8,8 @@
     "dev": "node --watch src/server.js",
     "migrate": "node src/scripts/migrate.js",
     "seed": "node src/scripts/seed.js",
+    "health": "node src/scripts/dbHealthCheck.js",
+    "demo:reset": "node src/scripts/resetDemoData.js",
     "test": "node --test test/**/*.test.js"
   },
   "dependencies": {
