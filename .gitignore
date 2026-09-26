@@ -3,6 +3,12 @@ node_modules/
 .pnp/
 .pnp.js
 
+# Vite cache & build
+.vite/
+frontend/.vite/
+dist/
+build/
+
 # Environment variables
 .env
 .env.local
@@ -13,10 +19,6 @@ node_modules/
 # Database local storage
 .stocksense_pgdata/
 *.log
-
-# Build output
-dist/
-build/
 
 # IDE / OS
 .vscode/

@@ -1,0 +1,31 @@
+{
+  "name": "stocksense",
+  "version": "1.0.0",
+  "description": "StockSense - Enterprise Inventory Management System for Odoo x LPU Hackathon 2026",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "start:backend": "npm --prefix backend start",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "test:backend": "npm --prefix backend test",
+    "health:backend": "npm --prefix backend run health",
+    "demo:reset": "npm --prefix backend run demo:reset",
+    "migrate": "npm --prefix backend run migrate",
+    "seed": "npm --prefix backend run seed"
+  },
+  "keywords": [
+    "inventory-management",
+    "erp",
+    "odoo-hackathon",
+    "postgres",
+    "react",
+    "express"
+  ],
+  "author": "manas0306-ops",
+  "license": "MIT"
+}
