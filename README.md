@@ -180,5 +180,22 @@ Follow this exact story to demonstrate the application to evaluators:
 
 ---
 
+## 📚 Technical Documentation & System Specifications
+
+Comprehensive engineering, architectural, and operational documentation is maintained in the [`docs/`](docs/) directory:
+
+| Document | Description | Direct Link |
+| :--- | :--- | :--- |
+| **Product Requirements Document (PRD)** | Market context, user personas, functional requirements, and success metrics. | [`docs/PRD.md`](docs/PRD.md) |
+| **Technical Requirements Document (TRD)** | System architecture, ER diagram, database schema, concurrency locking, and API contracts. | [`docs/TRD.md`](docs/TRD.md) |
+| **UI/UX Design Brief** | Industrial design philosophy, Tailwind token palette, typography, components, and print specifications. | [`docs/UI_UX_DESIGN_BRIEF.md`](docs/UI_UX_DESIGN_BRIEF.md) |
+| **Application Flow (APP FLOW)** | User journey, document state machines (`Draft` ➔ `Ready` ➔ `Done`), and sequence flowcharts. | [`docs/APP_FLOW.md`](docs/APP_FLOW.md) |
+| **Presentation Deck & Judge Guide** | Complete 24-section hackathon presentation deck, technical defense, and 3-minute demo script. | [`docs/PRESENTATION_DECK.md`](docs/PRESENTATION_DECK.md) |
+| **REST API Contracts** | Request and response schema definitions for all 18 backend endpoints. | [`docs/API_CONTRACTS.md`](docs/API_CONTRACTS.md) |
+| **Team Role Assignments** | Module ownership, file boundaries, and team member responsibility breakdown. | [`docs/ROLE_ASSIGNMENTS.md`](docs/ROLE_ASSIGNMENTS.md) |
+| **Postman API Collection** | Importable Postman v2.1 collection covering all operational endpoints. | [`docs/StockSense_API.postman_collection.json`](docs/StockSense_API.postman_collection.json) |
+
+---
+
 ## 📄 License
 Developed for Odoo x LPU Jalandhar Hackathon 2026. Released under the MIT License.
