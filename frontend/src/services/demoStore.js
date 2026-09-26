@@ -167,8 +167,12 @@ function saveDb(data) {
 
 export function handleMockRequest(endpoint, options = {}) {
   const method = (options.method || 'GET').toUpperCase();
-  const url = new URL(`http://dummy${endpoint}`);
-  const pathname = url.pathname;
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const url = new URL(`http://dummy${cleanEndpoint}`);
+  let pathname = url.pathname;
+  if (pathname.startsWith('/api')) {
+    pathname = pathname.slice(4);
+  }
   const searchParams = url.searchParams;
   let body = {};
   if (options.body) {
@@ -205,7 +209,7 @@ export function handleMockRequest(endpoint, options = {}) {
       id: Date.now(),
       name: body.name || 'New User',
       email: body.email,
-      role: body.role || 'Warehouse Staff'
+      role: body.role || 'Inventory Manager'
     };
     return {
       success: true,
@@ -223,13 +227,17 @@ export function handleMockRequest(endpoint, options = {}) {
       savedUser = JSON.parse(localStorage.getItem('stocksense_user'));
     } catch (e) {
     }
+    const currentUser = savedUser || {
+      id: 1,
+      name: 'Alex Rivera (Manager)',
+      email: 'manager@stocksense.com',
+      role: 'Inventory Manager'
+    };
     return {
       success: true,
-      data: savedUser || {
-        id: 1,
-        name: 'Alex Rivera (Manager)',
-        email: 'manager@stocksense.com',
-        role: 'Inventory Manager'
+      data: {
+        user: currentUser,
+        ...currentUser
       }
     };
   }

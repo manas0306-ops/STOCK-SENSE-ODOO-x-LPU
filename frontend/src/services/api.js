@@ -1,6 +1,12 @@
 import { handleMockRequest } from './demoStore';
 
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+const isStaticDeploy = typeof window !== 'undefined' && (
+  window.location.hostname.includes('github.io') ||
+  window.location.hostname.includes('vercel.app') ||
+  window.location.hostname.includes('netlify.app')
+);
+
+const API_BASE = import.meta.env.VITE_API_URL || (isStaticDeploy ? '' : '/api');
 
 export async function apiRequest(endpoint, options = {}) {
   const token = localStorage.getItem('stocksense_token');
@@ -15,9 +21,13 @@ export async function apiRequest(endpoint, options = {}) {
     headers,
   };
 
+  if (isStaticDeploy && !import.meta.env.VITE_API_URL) {
+    return handleMockRequest(endpoint, options);
+  }
+
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, config);
-    if (response.status === 404) {
+    if (response.status === 404 || response.status === 405) {
       return handleMockRequest(endpoint, options);
     }
 
@@ -38,7 +48,7 @@ export async function apiRequest(endpoint, options = {}) {
 
     return data;
   } catch (err) {
-    if (err.status && err.status !== 404) {
+    if (err.status && err.status !== 404 && err.status !== 405) {
       throw err;
     }
     return handleMockRequest(endpoint, options);
