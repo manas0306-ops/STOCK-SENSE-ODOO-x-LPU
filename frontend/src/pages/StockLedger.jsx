@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { ledgerService } from '../services/operationServices';
 import { productService } from '../services/productService';
 import StatusBadge from '../components/StatusBadge';
-import { ClipboardList, RefreshCw, Filter } from 'lucide-react';
+import { ClipboardList, RefreshCw, Filter, Download } from 'lucide-react';
+import { exportToCSV } from '../utils/csvExport';
 
 export default function StockLedger() {
   const [logs, setLogs] = useState([]);
@@ -36,6 +37,31 @@ export default function StockLedger() {
     }
   };
 
+  const handleExportCSV = () => {
+    if (!logs || logs.length === 0) {
+      return;
+    }
+
+    const columns = [
+      { label: 'Timestamp', accessor: (l) => new Date(l.timestamp).toISOString() },
+      { label: 'Operation Type', key: 'operation_type' },
+      { label: 'Product Name', key: 'product_name' },
+      { label: 'SKU', key: 'sku' },
+      { label: 'Source Location', accessor: (l) => l.source_location_name ? `${l.source_location_name} (${l.source_warehouse_name || ''})` : 'SUPPLIER IN' },
+      { label: 'Destination Location', accessor: (l) => l.destination_location_name ? `${l.destination_location_name} (${l.destination_warehouse_name || ''})` : 'CUSTOMER OUT' },
+      { label: 'Movement Quantity', accessor: (l) => parseFloat(l.quantity) },
+      { label: 'Unit', key: 'unit_of_measure' },
+      { label: 'Previous Balance', accessor: (l) => parseFloat(l.previous_stock) },
+      { label: 'Resulting Balance', accessor: (l) => parseFloat(l.new_stock) },
+      { label: 'Operator', accessor: (l) => l.user_name || 'System' },
+      { label: 'Reference Type', key: 'reference_type' },
+      { label: 'Reference ID', key: 'reference_id' }
+    ];
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    exportToCSV(`stocksense_ledger_${dateStr}`, columns, logs);
+  };
+
   useEffect(() => {
     fetchProducts();
   }, []);
@@ -51,13 +77,23 @@ export default function StockLedger() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Stock Ledger Audit Trail</h1>
           <p className="text-sm text-slate-500">Immutable ledger of every receipt, delivery, transfer, and adjustment</p>
         </div>
-        <button
-          onClick={fetchLedger}
-          className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 shadow-xs cursor-pointer transition-colors"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-          <span>Refresh Ledger</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExportCSV}
+            disabled={logs.length === 0}
+            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 shadow-xs cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span>Export to CSV</span>
+          </button>
+          <button
+            onClick={fetchLedger}
+            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 shadow-xs cursor-pointer transition-colors"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh Ledger</span>
+          </button>
+        </div>
       </div>
 
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center gap-4">

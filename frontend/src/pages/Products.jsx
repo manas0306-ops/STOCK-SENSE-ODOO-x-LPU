@@ -13,8 +13,10 @@ import {
   Warehouse, 
   Eye, 
   CheckCircle2, 
-  RefreshCw 
+  RefreshCw,
+  Download 
 } from 'lucide-react';
+import { exportToCSV } from '../utils/csvExport';
 
 export default function Products() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -107,6 +109,34 @@ export default function Products() {
     }
   };
 
+  const handleExportCSV = () => {
+    if (!products || products.length === 0) {
+      return;
+    }
+
+    const columns = [
+      { label: 'Product Name', key: 'name' },
+      { label: 'SKU', key: 'sku' },
+      { label: 'Category', accessor: (p) => p.category_name || 'General' },
+      { label: 'Current Stock', accessor: (p) => parseFloat(p.current_stock) },
+      { label: 'Unit', key: 'unit_of_measure' },
+      { label: 'Reorder Level', accessor: (p) => parseFloat(p.reorder_level) },
+      {
+        label: 'Status',
+        accessor: (p) => {
+          const stock = parseFloat(p.current_stock);
+          const reorder = parseFloat(p.reorder_level);
+          if (stock === 0) return 'Out of Stock';
+          if (stock <= reorder) return 'Low Stock';
+          return 'In Stock';
+        }
+      }
+    ];
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    exportToCSV(`stocksense_products_${dateStr}`, columns, products);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -114,13 +144,23 @@ export default function Products() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Products Catalog</h1>
           <p className="text-sm text-slate-500">Manage SKU definitions, reorder thresholds, and current stock distribution</p>
         </div>
-        <button
-          onClick={() => setIsCreateOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-500 shadow-xs cursor-pointer transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Add New Product</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExportCSV}
+            disabled={products.length === 0}
+            className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 shadow-xs cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span>Export to CSV</span>
+          </button>
+          <button
+            onClick={() => setIsCreateOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-500 shadow-xs cursor-pointer transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Add New Product</span>
+          </button>
+        </div>
       </div>
 
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-center gap-4">
