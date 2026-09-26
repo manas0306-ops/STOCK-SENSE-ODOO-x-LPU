@@ -10,8 +10,10 @@ import {
   RefreshCw, 
   Eye, 
   Trash2, 
-  AlertCircle 
+  AlertCircle,
+  Printer 
 } from 'lucide-react';
+import { printDeliveryDocument } from '../utils/printDocument';
 
 export default function Deliveries() {
   const [deliveries, setDeliveries] = useState([]);
@@ -156,6 +158,17 @@ export default function Deliveries() {
     }
   };
 
+  const handleDirectPrint = async (id) => {
+    try {
+      const res = await deliveryService.getById(id);
+      if (res && res.data) {
+        printDeliveryDocument(res.data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -247,13 +260,23 @@ export default function Deliveries() {
                       {new Date(d.created_at).toLocaleDateString()}
                     </td>
                     <td className="py-4 px-6 text-right">
-                      <button
-                        onClick={() => openDetail(d.id)}
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
-                      >
-                        <Eye className="h-3.5 w-3.5" />
-                        <span>Inspect / Ship</span>
-                      </button>
+                      <div className="inline-flex items-center gap-1.5 justify-end">
+                        <button
+                          type="button"
+                          onClick={() => handleDirectPrint(d.id)}
+                          title="Print Delivery Slip"
+                          className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <Printer className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => openDetail(d.id)}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors cursor-pointer"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          <span>Inspect / Ship</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -519,6 +542,15 @@ export default function Deliveries() {
                     <span>Validate & Dispatch</span>
                   </button>
                 )}
+
+                <button
+                  type="button"
+                  onClick={() => printDeliveryDocument(selectedDelivery)}
+                  className="px-3.5 py-1.5 border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 text-xs font-semibold rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Printer className="h-3.5 w-3.5 text-slate-600" />
+                  <span>Print Delivery Slip</span>
+                </button>
 
                 <button
                   type="button"

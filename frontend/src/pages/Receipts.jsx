@@ -11,8 +11,10 @@ import {
   RefreshCw, 
   Eye, 
   Trash2, 
-  AlertCircle 
+  AlertCircle,
+  Printer 
 } from 'lucide-react';
+import { printReceiptDocument } from '../utils/printDocument';
 
 export default function Receipts() {
   const [receipts, setReceipts] = useState([]);
@@ -153,6 +155,17 @@ export default function Receipts() {
     }
   };
 
+  const handleDirectPrint = async (id) => {
+    try {
+      const res = await receiptService.getById(id);
+      if (res && res.data) {
+        printReceiptDocument(res.data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -244,13 +257,23 @@ export default function Receipts() {
                       {new Date(r.created_at).toLocaleDateString()}
                     </td>
                     <td className="py-4 px-6 text-right">
-                      <button
-                        onClick={() => openDetail(r.id)}
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 px-3 py-1.5 rounded-lg hover:bg-emerald-50 transition-colors"
-                      >
-                        <Eye className="h-3.5 w-3.5" />
-                        <span>Inspect / Validate</span>
-                      </button>
+                      <div className="inline-flex items-center gap-1.5 justify-end">
+                        <button
+                          type="button"
+                          onClick={() => handleDirectPrint(r.id)}
+                          title="Print Receipt Note"
+                          className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <Printer className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => openDetail(r.id)}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 px-3 py-1.5 rounded-lg hover:bg-emerald-50 transition-colors cursor-pointer"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          <span>Inspect / Validate</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -484,6 +507,15 @@ export default function Receipts() {
                     <span>Validate & Increase Stock</span>
                   </button>
                 )}
+
+                <button
+                  type="button"
+                  onClick={() => printReceiptDocument(selectedReceipt)}
+                  className="px-3.5 py-1.5 border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 text-xs font-semibold rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Printer className="h-3.5 w-3.5 text-slate-600" />
+                  <span>Print Receipt Note</span>
+                </button>
 
                 <button
                   type="button"
