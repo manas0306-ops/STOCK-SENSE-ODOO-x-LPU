@@ -80,8 +80,8 @@ Draft  ──>  Ready  ──>  Done (Stock Updated + Ledger Written)
 
 ### 1. Clone & Configure Environment
 ```bash
-git clone https://github.com/manas0306-ops/STOCK-SENSE-ODOO.git
-cd STOCK-SENSE-ODOO
+git clone https://github.com/manas0306-ops/STOCK-SENSE-ODOO-x-LPU.git
+cd STOCK-SENSE-ODOO-x-LPU
 
 # Copy environment template
 cp .env.example .env

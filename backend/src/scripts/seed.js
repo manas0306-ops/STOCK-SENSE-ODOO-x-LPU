@@ -62,23 +62,27 @@ async function seed() {
       }
     }
 
-    // 5. Suppliers
-    await client.query(`
-      INSERT INTO suppliers (name, contact) VALUES 
-        ('ABC Steel Suppliers', 'contact@abcsteel.com | +1-800-STEEL-01'),
-        ('Apex Components Ltd', 'sales@apexcomp.com | +1-800-APEX-02'),
-        ('Global Fasteners Inc', 'support@globalfasteners.com | +1-800-FAST-03')
-      ON CONFLICT DO NOTHING;
-    `);
+    const supCheck = await client.query('SELECT COUNT(*) FROM suppliers');
+    if (parseInt(supCheck.rows[0].count, 10) === 0) {
+      await client.query(`
+        INSERT INTO suppliers (name, contact) VALUES 
+          ('ABC Steel Suppliers', 'contact@abcsteel.com | +1-800-STEEL-01'),
+          ('Apex Components Ltd', 'sales@apexcomp.com | +1-800-APEX-02'),
+          ('Global Fasteners Inc', 'support@globalfasteners.com | +1-800-FAST-03')
+        ON CONFLICT DO NOTHING;
+      `);
+    }
 
-    // 6. Customers
-    await client.query(`
-      INSERT INTO customers (name, contact) VALUES 
-        ('XYZ Manufacturing', 'orders@xyzmfg.com | +1-888-XYZ-MFG'),
-        ('Metro Builds Corp', 'procure@metrobuilds.com | +1-888-METRO-02'),
-        ('Titan Heavy Industries', 'titan@industries.com | +1-888-TITAN-03')
-      ON CONFLICT DO NOTHING;
-    `);
+    const custCheck = await client.query('SELECT COUNT(*) FROM customers');
+    if (parseInt(custCheck.rows[0].count, 10) === 0) {
+      await client.query(`
+        INSERT INTO customers (name, contact) VALUES 
+          ('XYZ Manufacturing', 'orders@xyzmfg.com | +1-888-XYZ-MFG'),
+          ('Metro Builds Corp', 'procure@metrobuilds.com | +1-888-METRO-02'),
+          ('Titan Heavy Industries', 'titan@industries.com | +1-888-TITAN-03')
+        ON CONFLICT DO NOTHING;
+      `);
+    }
 
     // Fetch Category IDs
     const catRes = await client.query('SELECT id, name FROM categories');

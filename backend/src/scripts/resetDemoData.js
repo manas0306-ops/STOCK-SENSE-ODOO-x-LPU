@@ -15,7 +15,9 @@ async function resetDemoData() {
         transfer_items, transfers,
         adjustments,
         stock_ledger,
-        stocks
+        stocks,
+        suppliers,
+        customers
       CASCADE;
     `);
 
