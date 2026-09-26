@@ -34,8 +34,9 @@ export default function Products() {
   const [name, setName] = useState('');
   const [sku, setSku] = useState('');
   const [categoryId, setCategoryId] = useState('');
-  const [unitOfMeasure, setUnitOfMeasure] = useState('kg');
+  const [unitOfMeasure, setUnitOfMeasure] = useState('Kg');
   const [reorderLevel, setReorderLevel] = useState(10);
+  const [initialStock, setInitialStock] = useState('');
   const [formError, setFormError] = useState('');
   const [formSubmitting, setFormSubmitting] = useState(false);
 
@@ -83,12 +84,14 @@ export default function Products() {
         category_id: categoryId || null,
         unit_of_measure: unitOfMeasure,
         reorder_level: parseFloat(reorderLevel),
+        initial_stock: initialStock ? parseFloat(initialStock) : 0,
       });
       setIsCreateOpen(false);
       setName('');
       setSku('');
       setCategoryId('');
       setReorderLevel(10);
+      setInitialStock('');
       fetchProducts();
     } catch (err) {
       setFormError(err.message || 'Failed to create product');
@@ -353,11 +356,13 @@ export default function Products() {
                 onChange={(e) => setUnitOfMeasure(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-hidden focus:border-emerald-500"
               >
-                <option value="kg">kg (Kilograms)</option>
-                <option value="pcs">pcs (Pieces)</option>
-                <option value="units">units (Units)</option>
-                <option value="meters">meters (Meters)</option>
-                <option value="liters">liters (Liters)</option>
+                <option value="Unit">Unit</option>
+                <option value="Kg">Kg (Kilograms)</option>
+                <option value="Gram">Gram (g)</option>
+                <option value="Liter">Liter (L)</option>
+                <option value="Meter">Meter (m)</option>
+                <option value="Box">Box</option>
+                <option value="Piece">Piece (pcs)</option>
               </select>
             </div>
             <div>
@@ -374,6 +379,21 @@ export default function Products() {
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-hidden focus:border-emerald-500"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">
+              Initial Stock Count (Optional)
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={initialStock}
+              onChange={(e) => setInitialStock(e.target.value)}
+              placeholder="0 (leave empty if starting with zero stock)"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-hidden focus:border-emerald-500"
+            />
           </div>
 
           <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">

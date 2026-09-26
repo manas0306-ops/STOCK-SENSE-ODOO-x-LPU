@@ -420,6 +420,52 @@ export default function Deliveries() {
       >
         {selectedDelivery && (
           <div className="space-y-5">
+            <div className="bg-slate-900 rounded-xl p-3.5 border border-slate-800">
+              <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2.5">
+                Dispatch Lifecycle: Pick → Pack → Validate
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div className={`p-2.5 rounded-lg border text-center ${
+                  selectedDelivery.status === 'draft'
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                    : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                }`}>
+                  <div className="text-xs font-bold">1. PICK</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    {selectedDelivery.status === 'draft' ? 'Awaiting Pick' : 'Items Picked'}
+                  </div>
+                </div>
+
+                <div className={`p-2.5 rounded-lg border text-center ${
+                  selectedDelivery.status === 'draft'
+                    ? 'bg-slate-800/60 border-slate-700/60 text-slate-500'
+                    : selectedDelivery.status === 'ready'
+                    ? 'bg-blue-500/10 border-blue-500/30 text-blue-400'
+                    : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                }`}>
+                  <div className="text-xs font-bold">2. PACK</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    {selectedDelivery.status === 'draft'
+                      ? 'Pending Pick'
+                      : selectedDelivery.status === 'ready'
+                      ? 'Packed & Staged'
+                      : 'Packed & Sealed'}
+                  </div>
+                </div>
+
+                <div className={`p-2.5 rounded-lg border text-center ${
+                  selectedDelivery.status === 'done'
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                    : 'bg-slate-800/60 border-slate-700/60 text-slate-500'
+                }`}>
+                  <div className="text-xs font-bold">3. VALIDATE</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    {selectedDelivery.status === 'done' ? 'Stock Deducted & Shipped' : 'Deduct Stock On Ship'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100 text-xs">
               <div>
                 <span className="text-slate-400 uppercase font-semibold">Status:</span>
@@ -527,7 +573,7 @@ export default function Deliveries() {
                     onClick={() => handleMarkReady(selectedDelivery.id)}
                     className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg shadow-xs disabled:opacity-50 cursor-pointer"
                   >
-                    Mark Ready
+                    Pick & Stage for Packing
                   </button>
                 )}
 
@@ -539,7 +585,7 @@ export default function Deliveries() {
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                   >
                     <CheckCircle className="h-4 w-4" />
-                    <span>Validate & Dispatch</span>
+                    <span>Validate Shipment (Deduct Stock)</span>
                   </button>
                 )}
 

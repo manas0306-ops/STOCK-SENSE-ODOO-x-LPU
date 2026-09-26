@@ -12,6 +12,8 @@ import Transfers from './pages/Transfers';
 import Adjustments from './pages/Adjustments';
 import StockLedger from './pages/StockLedger';
 import Settings from './pages/Settings';
+import ForgotPassword from './pages/ForgotPassword';
+import Profile from './pages/Profile';
 
 function PublicRoute({ children }) {
   const { user, loading } = useAuth();
@@ -45,6 +47,14 @@ export default function App() {
               </PublicRoute>
             }
           />
+          <Route
+            path="/forgot-password"
+            element={
+              <PublicRoute>
+                <ForgotPassword />
+              </PublicRoute>
+            }
+          />
 
           <Route element={<AppLayout />}>
             <Route path="/" element={<Dashboard />} />
@@ -56,6 +66,7 @@ export default function App() {
             <Route path="/adjustments" element={<Adjustments />} />
             <Route path="/ledger" element={<StockLedger />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/profile" element={<Profile />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

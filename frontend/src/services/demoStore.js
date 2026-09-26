@@ -242,6 +242,37 @@ export function handleMockRequest(endpoint, options = {}) {
     };
   }
 
+  if (pathname === '/auth/forgot-password' && method === 'POST') {
+    const email = body.email || 'manager@stocksense.com';
+    const otp = '849201';
+    sessionStorage.setItem('stocksense_demo_reset_otp', otp);
+    sessionStorage.setItem('stocksense_demo_reset_email', email);
+    return {
+      success: true,
+      data: {
+        email,
+        demoOtp: otp,
+        expiresInMinutes: 10
+      },
+      message: 'Password reset OTP generated successfully'
+    };
+  }
+
+  if (pathname === '/auth/reset-password' && method === 'POST') {
+    const { email, otp, newPassword } = body;
+    const storedOtp = sessionStorage.getItem('stocksense_demo_reset_otp') || '849201';
+    if (otp && otp.toString().trim() !== storedOtp && otp.toString().trim() !== '849201') {
+      const err = new Error('Invalid OTP. Please check the code and try again.');
+      err.response = { data: { success: false, message: 'Invalid OTP. Please check the code and try again.' } };
+      throw err;
+    }
+    return {
+      success: true,
+      data: null,
+      message: 'Password has been reset successfully. You can now log in with your new password.'
+    };
+  }
+
   if (pathname === '/dashboard') {
     const totalProducts = db.products.length;
     let lowStockCount = 0;
@@ -320,6 +351,18 @@ export function handleMockRequest(endpoint, options = {}) {
     }
 
     if (method === 'POST') {
+      const initialQty = parseFloat(body.initial_stock || 0);
+      const initialLocations = [];
+      if (!isNaN(initialQty) && initialQty > 0) {
+        const defaultLoc = db.locations[0] || { id: 1, name: 'Main Store', warehouse_name: 'Main Warehouse' };
+        initialLocations.push({
+          location_id: defaultLoc.id,
+          location_name: defaultLoc.name,
+          warehouse_name: defaultLoc.warehouse_name,
+          quantity: initialQty
+        });
+      }
+
       const newProd = {
         id: Date.now(),
         name: body.name,
@@ -329,7 +372,7 @@ export function handleMockRequest(endpoint, options = {}) {
         unit_of_measure: body.unit_of_measure || 'units',
         reorder_level: parseFloat(body.reorder_level || 0),
         description: body.description || '',
-        locations: []
+        locations: initialLocations
       };
       db.products.push(newProd);
       saveDb(db);

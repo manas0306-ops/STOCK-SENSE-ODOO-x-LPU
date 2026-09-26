@@ -1,4 +1,4 @@
-const { query } = require('../config/db');
+const { pool, query } = require('../config/db');
 const InventoryEngine = require('../services/inventoryEngine');
 const { ValidationError, NotFoundError } = require('../utils/errors');
 const { sendSuccess } = require('../utils/response');
@@ -92,8 +92,10 @@ class ProductController {
   }
 
   static async create(req, res, next) {
+    const client = await pool.connect();
     try {
-      const { name, sku, category_id, unit_of_measure, reorder_level } = req.body;
+      await client.query('BEGIN');
+      const { name, sku, category_id, unit_of_measure, reorder_level, initial_stock, initial_location_id } = req.body;
 
       if (!name || !sku) {
         throw new ValidationError('Product name and SKU are required');
@@ -106,16 +108,44 @@ class ProductController {
         throw new ValidationError('Reorder level must be a non-negative number');
       }
 
-      const result = await query(
+      const result = await client.query(
         `INSERT INTO products (name, sku, category_id, unit_of_measure, reorder_level)
          VALUES ($1, $2, $3, $4, $5)
          RETURNING *`,
         [name.trim(), cleanSku, category_id || null, unit_of_measure?.trim() || 'Units', reorderLevelNum]
       );
 
-      return sendSuccess(res, result.rows[0], 'Product created successfully', 201);
+      const product = result.rows[0];
+      const initialQty = parseFloat(initial_stock || 0);
+
+      if (!isNaN(initialQty) && initialQty > 0) {
+        let locId = initial_location_id;
+        if (!locId) {
+          const locRes = await client.query(`SELECT id FROM locations WHERE type = 'internal' ORDER BY id ASC LIMIT 1`);
+          if (locRes.rows.length > 0) {
+            locId = locRes.rows[0].id;
+          }
+        }
+        if (locId) {
+          await InventoryEngine.increaseStock(
+            client,
+            product.id,
+            locId,
+            initialQty,
+            req.user?.id || null,
+            'INITIAL_STOCK',
+            product.id
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+      return sendSuccess(res, product, 'Product created successfully', 201);
     } catch (err) {
+      await client.query('ROLLBACK');
       next(err);
+    } finally {
+      client.release();
     }
   }
 

@@ -10,6 +10,8 @@ import {
   ClipboardList, 
   Settings, 
   Boxes,
+  Warehouse,
+  User,
   X
 } from 'lucide-react';
 
@@ -21,7 +23,9 @@ const navigation = [
   { name: 'Transfers', href: '/transfers', icon: ArrowLeftRight, badge: 'INTERNAL' },
   { name: 'Adjustments', href: '/adjustments', icon: Sliders },
   { name: 'Stock Ledger', href: '/ledger', icon: ClipboardList },
-  { name: 'Settings & Locations', href: '/settings', icon: Settings },
+  { name: 'Warehouses', href: '/settings?tab=warehouses', icon: Warehouse },
+  { name: 'Settings & Meta', href: '/settings', icon: Settings },
+  { name: 'My Profile', href: '/profile', icon: User },
 ];
 
 export default function Sidebar({ mobileOpen = false, onClose = () => {} }) {
@@ -30,6 +34,13 @@ export default function Sidebar({ mobileOpen = false, onClose = () => {} }) {
   const isItemActive = (href) => {
     if (href === '/dashboard') {
       return location.pathname === '/' || location.pathname === '/dashboard';
+    }
+    if (href.includes('?')) {
+      const [path, query] = href.split('?');
+      return location.pathname === path && location.search.includes(query);
+    }
+    if (href === '/settings') {
+      return location.pathname === '/settings' && !location.search.includes('tab=warehouses');
     }
     return location.pathname.startsWith(href);
   };

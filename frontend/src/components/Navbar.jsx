@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { LogOut, ShieldCheck, Menu, Boxes } from 'lucide-react';
 
@@ -35,7 +36,11 @@ export default function Navbar({ onMenuToggle }) {
 
       <div className="flex items-center gap-3 sm:gap-4">
         {user && (
-          <div className="flex items-center gap-2.5 sm:gap-3 pr-2 sm:pr-4 border-r border-slate-200">
+          <Link
+            to="/profile"
+            className="flex items-center gap-2.5 sm:gap-3 pr-2 sm:pr-4 border-r border-slate-200 hover:opacity-80 transition-opacity cursor-pointer"
+            title="View Profile & Credentials"
+          >
             <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 font-semibold text-xs sm:text-sm">
               {(user.name || 'U').charAt(0).toUpperCase()}
             </div>
@@ -46,7 +51,7 @@ export default function Navbar({ onMenuToggle }) {
                 <span>{user.role}</span>
               </div>
             </div>
-          </div>
+          </Link>
         )}
 
         <button

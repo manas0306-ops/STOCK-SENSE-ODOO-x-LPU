@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { metaService } from '../services/operationServices';
 import Modal from '../components/Modal';
 import { 
@@ -14,7 +15,15 @@ import {
 } from 'lucide-react';
 
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState('warehouses');
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState(tabParam || 'warehouses');
+
+  useEffect(() => {
+    if (tabParam) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
   const [warehouses, setWarehouses] = useState([]);
   const [locations, setLocations] = useState([]);
   const [categories, setCategories] = useState([]);
