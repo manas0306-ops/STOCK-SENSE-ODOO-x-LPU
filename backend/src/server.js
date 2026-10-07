@@ -1,17 +1,14 @@
 const express = require('express');
 const cors = require('cors');
-const dotenv = require('dotenv');
+const env = require('./config/env');
 const errorHandler = require('./middleware/errorHandler');
 
-// Load environment variables
-dotenv.config();
-
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = env.PORT;
 
 // Middlewares
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  origin: env.CORS_ORIGIN,
   credentials: true,
 }));
 app.use(express.json());

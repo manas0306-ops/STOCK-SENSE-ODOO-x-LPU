@@ -129,11 +129,17 @@ class AuthController {
         [otpHashed, expiresAt, user.id]
       );
 
-      return sendSuccess(res, {
+      const responseData = {
         email: user.email,
-        demoOtp: otp,
-        expiresInMinutes: 10
-      }, 'Password reset OTP generated successfully');
+        expiresInMinutes: 10,
+      };
+
+      // Only expose demoOtp in automated test or explicitly enabled demo mode
+      if (process.env.ALLOW_DEMO_OTP === 'true' || process.env.NODE_ENV === 'test') {
+        responseData.demoOtp = otp;
+      }
+
+      return sendSuccess(res, responseData, 'Password reset instructions dispatched successfully');
     } catch (err) {
       next(err);
     }

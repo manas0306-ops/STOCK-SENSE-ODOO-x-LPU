@@ -1,8 +1,9 @@
 const jwt = require('jsonwebtoken');
+const env = require('../config/env');
 const { query } = require('../config/db');
 const { UnauthorizedError, ForbiddenError } = require('../utils/errors');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'stocksense_hackathon_super_secret_jwt_key_2026';
+const JWT_SECRET = env.JWT_SECRET;
 
 async function requireAuth(req, res, next) {
   try {
@@ -38,7 +39,7 @@ function requireRole(...allowedRoles) {
       return next(new UnauthorizedError());
     }
     if (!allowedRoles.includes(req.user.role)) {
-      return next(new ForbiddenError(`Requires one of roles: ${allowedRoles.join(', ')}`));
+      return next(new ForbiddenError(`Access denied: Requires role ${allowedRoles.join(' or ')}`));
     }
     next();
   };

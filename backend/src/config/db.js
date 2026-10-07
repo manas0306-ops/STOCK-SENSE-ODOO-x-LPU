@@ -1,18 +1,39 @@
 const { Pool } = require('pg');
-const dotenv = require('dotenv');
+const env = require('./env');
 
-dotenv.config();
+let pool;
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres@127.0.0.1:5433/stocksense_db',
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
-});
+if (process.env.USE_PG_MEM === 'true') {
+  // In-memory PostgreSQL instance for local automated tests and zero-dependency testing
+  const { newDb } = require('pg-mem');
+  const fs = require('fs');
+  const path = require('path');
+  const memDb = newDb();
 
-pool.on('error', (err) => {
-  console.error('[PostgreSQL] Unexpected error on idle client:', err.message);
-});
+  // Execute migrations
+  try {
+    const mig1 = fs.readFileSync(path.resolve(__dirname, '../../../database/migrations/001_initial_schema.sql'), 'utf-8');
+    const mig2 = fs.readFileSync(path.resolve(__dirname, '../../../database/migrations/002_password_reset.sql'), 'utf-8');
+    memDb.public.none(mig1);
+    memDb.public.none(mig2);
+  } catch (err) {
+    console.error('[pg-mem] Migration loading failed:', err.message);
+  }
+
+  const pgAdapter = memDb.adapters.createPg();
+  pool = new pgAdapter.Pool();
+} else {
+  pool = new Pool({
+    connectionString: env.DATABASE_URL,
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+  });
+
+  pool.on('error', (err) => {
+    console.error('[PostgreSQL] Unexpected error on idle client:', err.message);
+  });
+}
 
 module.exports = {
   pool,
