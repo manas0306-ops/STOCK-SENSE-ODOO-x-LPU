@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, ShieldCheck, Menu, Boxes, Activity, Database } from 'lucide-react';
+import { useInventoryUI } from '../context/InventoryUIContext';
+import { LogOut, ShieldCheck, Menu, Boxes, Search } from 'lucide-react';
 import { getOperatingMode, subscribeOperatingMode } from '../services/api';
 
-export default function Navbar({ onMenuToggle, onOpenSearch }) {
+export default function Navbar({ onMenuToggle }) {
   const { user, logout } = useAuth();
+  const { openSearch } = useInventoryUI();
   const [mode, setMode] = useState(getOperatingMode());
 
   useEffect(() => {
@@ -56,6 +58,27 @@ export default function Navbar({ onMenuToggle, onOpenSearch }) {
       </div>
 
       <div className="flex items-center gap-3 sm:gap-4">
+        {/* Global Search Button */}
+        <button
+          type="button"
+          onClick={openSearch}
+          className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 rounded-lg text-xs font-medium border border-slate-200 transition-colors cursor-pointer"
+          title="Search products, receipts, deliveries, transfers (Ctrl+K)"
+        >
+          <Search className="h-3.5 w-3.5 text-slate-400" />
+          <span>Quick Search...</span>
+          <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-white rounded border border-slate-200 text-slate-500 shadow-2xs">
+            Ctrl K
+          </kbd>
+        </button>
+        <button
+          type="button"
+          onClick={openSearch}
+          className="md:hidden p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer"
+          aria-label="Quick Search"
+        >
+          <Search className="h-4 w-4" />
+        </button>
         {user && (
           <Link
             to="/profile"

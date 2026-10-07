@@ -12,11 +12,15 @@ import {
   Boxes,
   Warehouse,
   User,
-  X
+  X,
+  BarChart3,
+  Sparkles
 } from 'lucide-react';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'Analytics Studio', href: '/analytics', icon: BarChart3, badge: 'PRO' },
+  { name: 'Inventory Simulator', href: '/simulator', icon: Sparkles, badge: 'NEW' },
   { name: 'Products', href: '/products', icon: Package },
   { name: 'Receipts', href: '/receipts', icon: ArrowDownLeft, badge: 'IN' },
   { name: 'Deliveries', href: '/deliveries', icon: ArrowUpRight, badge: 'OUT' },

@@ -40,7 +40,7 @@ export default function Deliveries() {
     setLoading(true);
     try {
       const res = await deliveryService.getAll(statusFilter);
-      setDeliveries(res.data);
+      setDeliveries(res.data?.items || res.data || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -55,11 +55,12 @@ export default function Deliveries() {
         metaService.getLocations(),
         productService.getAll(),
       ]);
-      setCustomers(custRes.data);
-      setLocations(locRes.data);
-      setProducts(prodRes.data);
-      if (locRes.data.length > 0) setSourceLocationId(locRes.data[0].id);
-      if (prodRes.data.length > 0) setItems([{ product_id: prodRes.data[0].id, quantity: 20 }]);
+      setCustomers(custRes.data?.items || custRes.data || []);
+      setLocations(locRes.data?.items || locRes.data || []);
+      const prods = prodRes.data?.items || prodRes.data || [];
+      setProducts(prods);
+      if (locRes.data?.length > 0) setSourceLocationId(locRes.data[0].id);
+      if (prods.length > 0) setItems([{ product_id: prods[0].id, quantity: 20 }]);
     } catch (err) {
       console.error(err);
     }
@@ -153,6 +154,22 @@ export default function Deliveries() {
       setActionMessage('Delivery validated! Stock successfully deducted and recorded in ledger.');
     } catch (err) {
       setActionError(err.message || 'Validation failed: Insufficient stock');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCancel = async (id) => {
+    setActionLoading(true);
+    setActionError('');
+    setActionMessage('');
+    try {
+      await deliveryService.cancel(id);
+      openDetail(id);
+      fetchDeliveries();
+      setActionMessage('Delivery canceled successfully.');
+    } catch (err) {
+      setActionError(err.message || 'Cancellation failed');
     } finally {
       setActionLoading(false);
     }
@@ -577,16 +594,26 @@ export default function Deliveries() {
                   </button>
                 )}
 
-                {selectedDelivery.status !== 'done' && (
-                  <button
-                    type="button"
-                    disabled={actionLoading}
-                    onClick={() => handleValidate(selectedDelivery.id)}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
-                  >
-                    <CheckCircle className="h-4 w-4" />
-                    <span>Validate Shipment (Deduct Stock)</span>
-                  </button>
+                {selectedDelivery.status !== 'done' && selectedDelivery.status !== 'canceled' && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={actionLoading}
+                      onClick={() => handleValidate(selectedDelivery.id)}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                    >
+                      <CheckCircle className="h-4 w-4" />
+                      <span>Validate Shipment (Deduct Stock)</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={actionLoading}
+                      onClick={() => handleCancel(selectedDelivery.id)}
+                      className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-lg shadow-xs disabled:opacity-50 cursor-pointer transition-colors"
+                    >
+                      Cancel Delivery
+                    </button>
+                  </>
                 )}
 
                 <button

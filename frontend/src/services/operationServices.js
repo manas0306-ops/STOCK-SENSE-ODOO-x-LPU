@@ -6,6 +6,7 @@ export const receiptService = {
   create: (data) => api.post('/receipts', data),
   markReady: (id) => api.post(`/receipts/${id}/ready`),
   validate: (id) => api.post(`/receipts/${id}/validate`),
+  cancel: (id) => api.post(`/receipts/${id}/cancel`),
 };
 
 export const deliveryService = {
@@ -14,6 +15,7 @@ export const deliveryService = {
   create: (data) => api.post('/deliveries', data),
   markReady: (id) => api.post(`/deliveries/${id}/ready`),
   validate: (id) => api.post(`/deliveries/${id}/validate`),
+  cancel: (id) => api.post(`/deliveries/${id}/cancel`),
 };
 
 export const transferService = {
@@ -22,6 +24,7 @@ export const transferService = {
   create: (data) => api.post('/transfers', data),
   markReady: (id) => api.post(`/transfers/${id}/ready`),
   validate: (id) => api.post(`/transfers/${id}/validate`),
+  cancel: (id) => api.post(`/transfers/${id}/cancel`),
 };
 
 export const adjustmentService = {
@@ -29,6 +32,7 @@ export const adjustmentService = {
   getById: (id) => api.get(`/adjustments/${id}`),
   create: (data) => api.post('/adjustments', data),
   validate: (id) => api.post(`/adjustments/${id}/validate`),
+  cancel: (id) => api.post(`/adjustments/${id}/cancel`),
 };
 
 export const ledgerService = {

@@ -31,7 +31,7 @@ export default function Adjustments() {
     setLoading(true);
     try {
       const res = await adjustmentService.getAll();
-      setAdjustments(res.data);
+      setAdjustments(res.data?.items || res.data || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -45,10 +45,12 @@ export default function Adjustments() {
         metaService.getLocations(),
         productService.getAll(),
       ]);
-      setLocations(locRes.data);
-      setProducts(prodRes.data);
-      if (locRes.data.length > 0) setLocationId(locRes.data[0].id);
-      if (prodRes.data.length > 0) setProductId(prodRes.data[0].id);
+      const locs = locRes.data?.items || locRes.data || [];
+      const prods = prodRes.data?.items || prodRes.data || [];
+      setLocations(locs);
+      setProducts(prods);
+      if (locs.length > 0) setLocationId(locs[0].id);
+      if (prods.length > 0) setProductId(prods[0].id);
     } catch (err) {
       console.error(err);
     }

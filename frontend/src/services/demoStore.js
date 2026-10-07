@@ -297,11 +297,13 @@ export function handleMockRequest(endpoint, options = {}) {
     const totalProducts = db.products.length;
     let lowStockCount = 0;
     let outOfStockCount = 0;
+    let totalStockUnits = 0;
     const lowStockProducts = [];
 
     db.products.forEach(p => {
       const current = (p.locations || []).reduce((acc, loc) => acc + (parseFloat(loc.quantity) || 0), 0);
       p.current_stock = current;
+      totalStockUnits += current;
       if (current === 0) {
         outOfStockCount++;
       }
@@ -320,28 +322,105 @@ export function handleMockRequest(endpoint, options = {}) {
       }
     });
 
+    const pendingReceipts = db.receipts.filter(r => r.status !== 'done').length;
+    const incomingStock = db.receipts
+      .filter(r => r.status !== 'done')
+      .reduce((sum, r) => sum + (r.items || []).reduce((s, itm) => s + (parseFloat(itm.quantity) || 0), 0), 0);
+
+    const pendingDeliveries = db.deliveries.filter(d => d.status !== 'done').length;
+    const outgoingStock = db.deliveries
+      .filter(d => d.status !== 'done')
+      .reduce((sum, d) => sum + (d.items || []).reduce((s, itm) => s + (parseFloat(itm.quantity) || 0), 0), 0);
+
+    const pendingTransfers = db.transfers.filter(t => t.status !== 'done').length;
+    const totalPending = pendingReceipts + pendingDeliveries + pendingTransfers;
+
+    const availabilityPct = totalProducts > 0 ? ((totalProducts - outOfStockCount) / totalProducts) * 100 : 100;
+    const safetyPct = totalProducts > 0 ? ((totalProducts - lowStockCount) / totalProducts) * 100 : 100;
+    const operationScore = totalPending === 0 ? 100 : Math.max(30, 100 - (totalPending * 5));
+    const integrityScore = 100;
+
+    const healthScore = Math.round(
+      (availabilityPct * 0.35) +
+      (safetyPct * 0.35) +
+      (operationScore * 0.20) +
+      (integrityScore * 0.10)
+    );
+
+    // Fast movers & dead stock
+    const fastMovers = db.products
+      .map(p => {
+        const outflow = db.ledger
+          .filter(l => l.product_id === p.id && l.operation_type === 'DELIVERY')
+          .reduce((sum, l) => sum + (parseFloat(l.quantity) || 0), 0);
+        return {
+          id: p.id,
+          name: p.name,
+          sku: p.sku,
+          unit_of_measure: p.unit_of_measure,
+          total_outflow: outflow,
+        };
+      })
+      .filter(p => p.total_outflow > 0)
+      .sort((a, b) => b.total_outflow - a.total_outflow)
+      .slice(0, 5);
+
+    const deadStock = db.products
+      .filter(p => {
+        const outflow = db.ledger
+          .filter(l => l.product_id === p.id && l.operation_type === 'DELIVERY')
+          .reduce((sum, l) => sum + (parseFloat(l.quantity) || 0), 0);
+        return outflow === 0 && (p.current_stock || 0) > 0;
+      })
+      .slice(0, 5)
+      .map(p => ({
+        id: p.id,
+        name: p.name,
+        sku: p.sku,
+        current_stock: p.current_stock,
+      }));
+
     return {
       success: true,
       data: {
         kpis: {
           totalProducts,
+          totalStockUnits,
           lowStockCount,
           outOfStockCount,
-          pendingReceipts: db.receipts.filter(r => r.status !== 'done').length,
-          pendingDeliveries: db.deliveries.filter(d => d.status !== 'done').length,
-          transfersScheduled: db.transfers.filter(t => t.status !== 'done').length,
-          internalTransfers: db.transfers.length
+          pendingReceipts,
+          incomingStock,
+          pendingDeliveries,
+          outgoingStock,
+          transfersScheduled: pendingTransfers,
+          internalTransfers: db.transfers.length,
+          pendingTransfers,
+          pendingOperations: totalPending,
+          healthScore: Math.min(100, Math.max(0, healthScore)),
+          healthBreakdown: {
+            availability: Math.round(availabilityPct),
+            safety: Math.round(safetyPct),
+            operations: Math.round(operationScore),
+            integrity: integrityScore,
+          },
         },
         lowStockProducts,
         recentActivity: db.ledger.slice(0, 10).map(l => ({
           id: l.id,
+          timestamp: l.timestamp,
           operation_type: l.operation_type,
           product_name: l.product_name,
-          quantity_change: l.quantity,
-          location_name: l.destination_location_name || l.source_location_name || 'Warehouse',
-          created_at: l.timestamp,
-          reference_type: l.operation_type
+          sku: l.sku,
+          unit_of_measure: l.unit_of_measure,
+          source_location_name: l.source_location_name,
+          destination_location_name: l.destination_location_name,
+          quantity: l.quantity,
+          previous_stock: l.previous_stock,
+          new_stock: l.new_stock,
+          user_name: l.user_name || 'System Admin',
         })),
+        fastMovers,
+        deadStock,
         stockByCategory: [
           { category: 'Raw Materials', total_units: 10, product_count: 3 },
           { category: 'Hardware', total_units: 1000, product_count: 1 }

@@ -40,7 +40,7 @@ export default function Receipts() {
     setLoading(true);
     try {
       const res = await receiptService.getAll(statusFilter);
-      setReceipts(res.data);
+      setReceipts(res.data?.items || res.data || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -55,11 +55,12 @@ export default function Receipts() {
         metaService.getLocations(),
         productService.getAll(),
       ]);
-      setSuppliers(supRes.data);
-      setLocations(locRes.data);
-      setProducts(prodRes.data);
-      if (locRes.data.length > 0) setDestinationLocationId(locRes.data[0].id);
-      if (prodRes.data.length > 0) setItems([{ product_id: prodRes.data[0].id, quantity: 100 }]);
+      setSuppliers(supRes.data?.items || supRes.data || []);
+      setLocations(locRes.data?.items || locRes.data || []);
+      const prods = prodRes.data?.items || prodRes.data || [];
+      setProducts(prods);
+      if (locRes.data?.length > 0) setDestinationLocationId(locRes.data[0].id);
+      if (prods.length > 0) setItems([{ product_id: prods[0].id, quantity: 100 }]);
     } catch (err) {
       console.error(err);
     }
@@ -150,6 +151,21 @@ export default function Receipts() {
       setActionMessage('Stock successfully incremented and recorded in ledger!');
     } catch (err) {
       setActionMessage(err.message || 'Validation failed');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCancel = async (id) => {
+    setActionLoading(true);
+    setActionMessage('');
+    try {
+      await receiptService.cancel(id);
+      openDetail(id);
+      fetchReceipts();
+      setActionMessage('Receipt canceled successfully.');
+    } catch (err) {
+      setActionMessage(err.message || 'Cancellation failed');
     } finally {
       setActionLoading(false);
     }
@@ -496,16 +512,26 @@ export default function Receipts() {
                   </button>
                 )}
 
-                {selectedReceipt.status !== 'done' && (
-                  <button
-                    type="button"
-                    disabled={actionLoading}
-                    onClick={() => handleValidate(selectedReceipt.id)}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
-                  >
-                    <CheckCircle className="h-4 w-4" />
-                    <span>Validate & Increase Stock</span>
-                  </button>
+                {selectedReceipt.status !== 'done' && selectedReceipt.status !== 'canceled' && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={actionLoading}
+                      onClick={() => handleValidate(selectedReceipt.id)}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                    >
+                      <CheckCircle className="h-4 w-4" />
+                      <span>Validate & Increase Stock</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={actionLoading}
+                      onClick={() => handleCancel(selectedReceipt.id)}
+                      className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-lg shadow-xs disabled:opacity-50 cursor-pointer transition-colors"
+                    >
+                      Cancel Receipt
+                    </button>
+                  </>
                 )}
 
                 <button

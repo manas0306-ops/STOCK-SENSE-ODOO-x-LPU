@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { productService } from '../services/productService';
 import { metaService } from '../services/operationServices';
+import { useInventoryUI } from '../context/InventoryUIContext';
 import Modal from '../components/Modal';
 import { 
   Package, 
@@ -27,6 +28,8 @@ export default function Products() {
   const [selectedCategory, setSelectedCategory] = useState(searchParams.get('categoryId') || '');
   const [lowStockFilter, setLowStockFilter] = useState(searchParams.get('lowStock') === 'true');
 
+  const { openProduct360 } = useInventoryUI();
+
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -48,7 +51,7 @@ export default function Products() {
         categoryId: selectedCategory,
         lowStock: lowStockFilter,
       });
-      setProducts(res.data);
+      setProducts(res.data?.items || res.data || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -240,7 +243,13 @@ export default function Products() {
                   return (
                     <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="py-4 px-6 font-medium text-slate-900">
-                        <div className="font-semibold">{p.name}</div>
+                        <button
+                          onClick={() => openProduct360(p)}
+                          className="font-semibold text-left hover:text-blue-600 cursor-pointer block"
+                          title="Open Product 360 Dossier"
+                        >
+                          {p.name}
+                        </button>
                         <div className="text-xs font-mono text-slate-500">{p.sku}</div>
                       </td>
                       <td className="py-4 px-6 text-slate-600">
@@ -272,10 +281,17 @@ export default function Products() {
                           </span>
                         )}
                       </td>
-                      <td className="py-4 px-6 text-right">
+                      <td className="py-4 px-6 text-right space-x-2">
+                        <button
+                          onClick={() => openProduct360(p)}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 px-2 py-1.5 rounded-md hover:bg-blue-50 transition-colors cursor-pointer"
+                          title="View 360 Dossier"
+                        >
+                          <span>360°</span>
+                        </button>
                         <button
                           onClick={() => openProductDetail(p.id)}
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 px-2.5 py-1.5 rounded-md hover:bg-emerald-50 transition-colors"
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 px-2 py-1.5 rounded-md hover:bg-emerald-50 transition-colors cursor-pointer"
                         >
                           <Eye className="h-3.5 w-3.5" />
                           <span>Locations</span>

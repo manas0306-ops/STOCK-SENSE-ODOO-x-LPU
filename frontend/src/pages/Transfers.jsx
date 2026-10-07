@@ -37,7 +37,7 @@ export default function Transfers() {
     setLoading(true);
     try {
       const res = await transferService.getAll(statusFilter);
-      setTransfers(res.data);
+      setTransfers(res.data?.items || res.data || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -51,13 +51,15 @@ export default function Transfers() {
         metaService.getLocations(),
         productService.getAll(),
       ]);
-      setLocations(locRes.data);
-      setProducts(prodRes.data);
-      if (locRes.data.length >= 2) {
-        setSourceLocationId(locRes.data[0].id);
-        setDestinationLocationId(locRes.data[1].id);
+      const locs = locRes.data?.items || locRes.data || [];
+      const prods = prodRes.data?.items || prodRes.data || [];
+      setLocations(locs);
+      setProducts(prods);
+      if (locs.length >= 2) {
+        setSourceLocationId(locs[0].id);
+        setDestinationLocationId(locs[1].id);
       }
-      if (prodRes.data.length > 0) setItems([{ product_id: prodRes.data[0].id, quantity: 20 }]);
+      if (prods.length > 0) setItems([{ product_id: prods[0].id, quantity: 20 }]);
     } catch (err) {
       console.error(err);
     }
@@ -156,6 +158,22 @@ export default function Transfers() {
       setActionMessage('Transfer executed atomically! Both source and destination updated in ledger.');
     } catch (err) {
       setActionError(err.message || 'Validation failed: Insufficient source stock');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCancel = async (id) => {
+    setActionLoading(true);
+    setActionError('');
+    setActionMessage('');
+    try {
+      await transferService.cancel(id);
+      openDetail(id);
+      fetchTransfers();
+      setActionMessage('Transfer canceled successfully.');
+    } catch (err) {
+      setActionError(err.message || 'Cancellation failed');
     } finally {
       setActionLoading(false);
     }
@@ -516,16 +534,26 @@ export default function Transfers() {
                   </button>
                 )}
 
-                {selectedTransfer.status !== 'done' && (
-                  <button
-                    type="button"
-                    disabled={actionLoading}
-                    onClick={() => handleValidate(selectedTransfer.id)}
-                    className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold rounded-lg shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
-                  >
-                    <CheckCircle className="h-4 w-4" />
-                    <span>Execute Atomic Transfer</span>
-                  </button>
+                {selectedTransfer.status !== 'done' && selectedTransfer.status !== 'canceled' && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={actionLoading}
+                      onClick={() => handleValidate(selectedTransfer.id)}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold rounded-lg shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                    >
+                      <CheckCircle className="h-4 w-4" />
+                      <span>Execute Atomic Transfer</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={actionLoading}
+                      onClick={() => handleCancel(selectedTransfer.id)}
+                      className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-lg shadow-xs disabled:opacity-50 cursor-pointer transition-colors"
+                    >
+                      Cancel Transfer
+                    </button>
+                  </>
                 )}
 
                 <button
