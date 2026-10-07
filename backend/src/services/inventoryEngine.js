@@ -1,26 +1,40 @@
 const { query } = require('../config/db');
+const DecimalUtil = require('../utils/decimal');
 const { InsufficientStockError, ValidationError } = require('../utils/errors');
 
 class InventoryEngine {
   /**
+   * Deterministically sort items by product_id ASC to eliminate database deadlocks
+   * across concurrent multi-item operations.
+   */
+  static sortItems(items) {
+    if (!Array.isArray(items)) return [];
+    return [...items].sort((a, b) => {
+      const idA = Number(a.product_id || a.productId);
+      const idB = Number(b.product_id || b.productId);
+      return idA - idB;
+    });
+  }
+
+  /**
    * Increase stock at a specific location (Receipt)
    */
   static async increaseStock(client, productId, locationId, quantity, userId, refType = 'RECEIPT', refId = null) {
-    const qty = parseFloat(quantity);
+    const qty = DecimalUtil.parseQuantity(quantity);
     if (isNaN(qty) || qty <= 0) {
       throw new ValidationError('Quantity must be a positive number');
     }
 
-    // Lock stock record
+    // 1. Lock stock record
     const stockRes = await client.query(
       `SELECT quantity FROM stocks WHERE product_id = $1 AND location_id = $2 FOR UPDATE`,
       [productId, locationId]
     );
 
-    const previousStock = stockRes.rows.length > 0 ? parseFloat(stockRes.rows[0].quantity) : 0.0;
-    const newStock = previousStock + qty;
+    const previousStock = stockRes.rows.length > 0 ? DecimalUtil.parseQuantity(stockRes.rows[0].quantity) : 0.0;
+    const newStock = DecimalUtil.add(previousStock, qty);
 
-    // Upsert stock record
+    // 2. Upsert stock record
     await client.query(
       `INSERT INTO stocks (product_id, location_id, quantity, updated_at)
        VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
@@ -29,7 +43,7 @@ class InventoryEngine {
       [productId, locationId, newStock]
     );
 
-    // Ledger entry
+    // 3. Immutable ledger entry
     const ledgerRes = await client.query(
       `INSERT INTO stock_ledger (
         product_id, operation_type, source_location, destination_location,
@@ -51,10 +65,10 @@ class InventoryEngine {
 
   /**
    * Decrease stock at a specific location (Delivery)
-   * Enforces zero negative stock rule.
+   * Enforces zero negative stock rule strictly.
    */
   static async decreaseStock(client, productId, locationId, quantity, userId, refType = 'DELIVERY', refId = null) {
-    const qty = parseFloat(quantity);
+    const qty = DecimalUtil.parseQuantity(quantity);
     if (isNaN(qty) || qty <= 0) {
       throw new ValidationError('Quantity must be a positive number');
     }
@@ -72,16 +86,16 @@ class InventoryEngine {
       [productId, locationId]
     );
 
-    const available = stockRes.rows.length > 0 ? parseFloat(stockRes.rows[0].quantity) : 0.0;
+    const available = stockRes.rows.length > 0 ? DecimalUtil.parseQuantity(stockRes.rows[0].quantity) : 0.0;
 
-    if (available < qty) {
+    if (DecimalUtil.isLessThan(available, qty)) {
       throw new InsufficientStockError(available, qty, unit);
     }
 
     const previousStock = available;
-    const newStock = previousStock - qty;
+    const newStock = DecimalUtil.subtract(previousStock, qty);
 
-    // Update stock record
+    // 3. Update stock record
     await client.query(
       `UPDATE stocks
        SET quantity = $3, updated_at = CURRENT_TIMESTAMP
@@ -89,7 +103,7 @@ class InventoryEngine {
       [productId, locationId, newStock]
     );
 
-    // Ledger entry
+    // 4. Ledger entry
     const ledgerRes = await client.query(
       `INSERT INTO stock_ledger (
         product_id, operation_type, source_location, destination_location,
@@ -114,7 +128,7 @@ class InventoryEngine {
    * Creates TRANSFER_OUT and TRANSFER_IN in a single atomic transaction.
    */
   static async transferStock(client, productId, fromLocationId, toLocationId, quantity, userId, refType = 'TRANSFER', refId = null) {
-    const qty = parseFloat(quantity);
+    const qty = DecimalUtil.parseQuantity(quantity);
     if (isNaN(qty) || qty <= 0) {
       throw new ValidationError('Quantity must be a positive number');
     }
@@ -130,20 +144,20 @@ class InventoryEngine {
     );
     const unit = prodRes.rows[0]?.unit_of_measure || 'Units';
 
-    // 2. Lock and verify source stock
+    // 2. Lock source stock
     const sourceRes = await client.query(
       `SELECT quantity FROM stocks WHERE product_id = $1 AND location_id = $2 FOR UPDATE`,
       [productId, fromLocationId]
     );
 
-    const sourceAvailable = sourceRes.rows.length > 0 ? parseFloat(sourceRes.rows[0].quantity) : 0.0;
+    const sourceAvailable = sourceRes.rows.length > 0 ? DecimalUtil.parseQuantity(sourceRes.rows[0].quantity) : 0.0;
 
-    if (sourceAvailable < qty) {
+    if (DecimalUtil.isLessThan(sourceAvailable, qty)) {
       throw new InsufficientStockError(sourceAvailable, qty, unit);
     }
 
     const prevSourceStock = sourceAvailable;
-    const newSourceStock = prevSourceStock - qty;
+    const newSourceStock = DecimalUtil.subtract(prevSourceStock, qty);
 
     // Update source
     await client.query(
@@ -153,14 +167,14 @@ class InventoryEngine {
       [productId, fromLocationId, newSourceStock]
     );
 
-    // 2. Lock destination stock
+    // 3. Lock destination stock
     const destRes = await client.query(
       `SELECT quantity FROM stocks WHERE product_id = $1 AND location_id = $2 FOR UPDATE`,
       [productId, toLocationId]
     );
 
-    const prevDestStock = destRes.rows.length > 0 ? parseFloat(destRes.rows[0].quantity) : 0.0;
-    const newDestStock = prevDestStock + qty;
+    const prevDestStock = destRes.rows.length > 0 ? DecimalUtil.parseQuantity(destRes.rows[0].quantity) : 0.0;
+    const newDestStock = DecimalUtil.add(prevDestStock, qty);
 
     // Upsert destination
     await client.query(
@@ -171,7 +185,7 @@ class InventoryEngine {
       [productId, toLocationId, newDestStock]
     );
 
-    // 3. Ledger entries
+    // 4. Ledger entries (double-entry model)
     const ledgerOut = await client.query(
       `INSERT INTO stock_ledger (
         product_id, operation_type, source_location, destination_location,
@@ -205,7 +219,7 @@ class InventoryEngine {
    * Set stock directly during physical inventory reconciliation (Adjustment)
    */
   static async setStock(client, productId, locationId, countedQuantity, reason, userId, refType = 'ADJUSTMENT', refId = null) {
-    const counted = parseFloat(countedQuantity);
+    const counted = DecimalUtil.parseQuantity(countedQuantity);
     if (isNaN(counted) || counted < 0) {
       throw new ValidationError('Counted quantity must be non-negative');
     }
@@ -220,8 +234,8 @@ class InventoryEngine {
       [productId, locationId]
     );
 
-    const previousStock = stockRes.rows.length > 0 ? parseFloat(stockRes.rows[0].quantity) : 0.0;
-    const delta = counted - previousStock;
+    const previousStock = stockRes.rows.length > 0 ? DecimalUtil.parseQuantity(stockRes.rows[0].quantity) : 0.0;
+    const delta = DecimalUtil.subtract(counted, previousStock);
     const newStock = counted;
 
     // Upsert stock record
@@ -273,7 +287,10 @@ class InventoryEngine {
        ORDER BY w.name, l.name`,
       [productId]
     );
-    return res.rows;
+    return res.rows.map(r => ({
+      ...r,
+      quantity: DecimalUtil.parseQuantity(r.quantity),
+    }));
   }
 
   /**
@@ -287,7 +304,7 @@ class InventoryEngine {
        WHERE s.product_id = $1 AND l.active = true`,
       [productId]
     );
-    return parseFloat(res.rows[0]?.total_stock || 0);
+    return DecimalUtil.parseQuantity(res.rows[0]?.total_stock || 0);
   }
 
   /**
@@ -311,7 +328,12 @@ class InventoryEngine {
        HAVING COALESCE(SUM(s.quantity), 0) <= p.reorder_level
        ORDER BY deficit DESC, p.name ASC`
     );
-    return res.rows;
+    return res.rows.map(r => ({
+      ...r,
+      current_stock: DecimalUtil.parseQuantity(r.current_stock),
+      reorder_level: DecimalUtil.parseQuantity(r.reorder_level),
+      deficit: DecimalUtil.parseQuantity(r.deficit),
+    }));
   }
 }
 
