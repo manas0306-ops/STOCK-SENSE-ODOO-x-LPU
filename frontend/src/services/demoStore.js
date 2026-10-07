@@ -165,6 +165,26 @@ function saveDb(data) {
   }
 }
 
+const FSM_ALLOWED = {
+  draft: ['ready', 'canceled'],
+  ready: ['done', 'canceled'],
+  done: [],
+  canceled: [],
+};
+
+function checkTransition(current, target, entityName) {
+  const cur = (current || '').toLowerCase();
+  const tgt = (target || '').toLowerCase();
+  if (cur === tgt) return;
+  const allowed = FSM_ALLOWED[cur] || [];
+  if (!allowed.includes(tgt)) {
+    const err = new Error(`Cannot change ${entityName} from '${cur}' to '${tgt}'. Allowed transitions: ${allowed.join(', ') || 'none (terminal state)'}`);
+    err.status = 400;
+    err.code = 'INVALID_STATE_TRANSITION';
+    throw err;
+  }
+}
+
 export function handleMockRequest(endpoint, options = {}) {
   const method = (options.method || 'GET').toUpperCase();
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
@@ -456,11 +476,30 @@ export function handleMockRequest(endpoint, options = {}) {
   if (recReadyMatch && method === 'POST') {
     const id = parseInt(recReadyMatch[1], 10);
     const rec = db.receipts.find(r => r.id === id);
-    if (rec) {
-      rec.status = 'ready';
-      saveDb(db);
-      return { success: true, data: rec, message: 'Receipt marked ready' };
+    if (!rec) {
+      const err = new Error('Receipt not found');
+      err.status = 404;
+      throw err;
     }
+    checkTransition(rec.status, 'ready', 'Receipt');
+    rec.status = 'ready';
+    saveDb(db);
+    return { success: true, data: rec, message: 'Receipt marked ready' };
+  }
+
+  const recCancelMatch = pathname.match(/^\/receipts\/(\d+)\/cancel$/);
+  if (recCancelMatch && method === 'POST') {
+    const id = parseInt(recCancelMatch[1], 10);
+    const rec = db.receipts.find(r => r.id === id);
+    if (!rec) {
+      const err = new Error('Receipt not found');
+      err.status = 404;
+      throw err;
+    }
+    checkTransition(rec.status, 'canceled', 'Receipt');
+    rec.status = 'canceled';
+    saveDb(db);
+    return { success: true, data: rec, message: 'Receipt canceled successfully' };
   }
 
   const recValMatch = pathname.match(/^\/receipts\/(\d+)\/validate$/);
@@ -472,12 +511,7 @@ export function handleMockRequest(endpoint, options = {}) {
       err.status = 404;
       throw err;
     }
-    if (rec.status === 'done') {
-      const err = new Error('This receipt has already been validated and cannot be applied again');
-      err.status = 400;
-      err.code = 'ALREADY_VALIDATED';
-      throw err;
-    }
+    checkTransition(rec.status, 'done', 'Receipt');
 
     rec.items.forEach(itm => {
       const prod = db.products.find(p => p.id === parseInt(itm.product_id, 10));
@@ -579,11 +613,30 @@ export function handleMockRequest(endpoint, options = {}) {
   if (delReadyMatch && method === 'POST') {
     const id = parseInt(delReadyMatch[1], 10);
     const del = db.deliveries.find(d => d.id === id);
-    if (del) {
-      del.status = 'ready';
-      saveDb(db);
-      return { success: true, data: del, message: 'Delivery marked ready' };
+    if (!del) {
+      const err = new Error('Delivery not found');
+      err.status = 404;
+      throw err;
     }
+    checkTransition(del.status, 'ready', 'Delivery');
+    del.status = 'ready';
+    saveDb(db);
+    return { success: true, data: del, message: 'Delivery marked ready' };
+  }
+
+  const delCancelMatch = pathname.match(/^\/deliveries\/(\d+)\/cancel$/);
+  if (delCancelMatch && method === 'POST') {
+    const id = parseInt(delCancelMatch[1], 10);
+    const del = db.deliveries.find(d => d.id === id);
+    if (!del) {
+      const err = new Error('Delivery not found');
+      err.status = 404;
+      throw err;
+    }
+    checkTransition(del.status, 'canceled', 'Delivery');
+    del.status = 'canceled';
+    saveDb(db);
+    return { success: true, data: del, message: 'Delivery canceled successfully' };
   }
 
   const delValMatch = pathname.match(/^\/deliveries\/(\d+)\/validate$/);
@@ -595,12 +648,7 @@ export function handleMockRequest(endpoint, options = {}) {
       err.status = 404;
       throw err;
     }
-    if (del.status === 'done') {
-      const err = new Error('This delivery has already been validated and cannot be applied again');
-      err.status = 400;
-      err.code = 'ALREADY_VALIDATED';
-      throw err;
-    }
+    checkTransition(del.status, 'done', 'Delivery');
 
     for (const itm of del.items) {
       const prod = db.products.find(p => p.id === parseInt(itm.product_id, 10));
@@ -713,11 +761,30 @@ export function handleMockRequest(endpoint, options = {}) {
   if (transReadyMatch && method === 'POST') {
     const id = parseInt(transReadyMatch[1], 10);
     const trf = db.transfers.find(t => t.id === id);
-    if (trf) {
-      trf.status = 'ready';
-      saveDb(db);
-      return { success: true, data: trf, message: 'Transfer marked ready' };
+    if (!trf) {
+      const err = new Error('Transfer not found');
+      err.status = 404;
+      throw err;
     }
+    checkTransition(trf.status, 'ready', 'Transfer');
+    trf.status = 'ready';
+    saveDb(db);
+    return { success: true, data: trf, message: 'Transfer marked ready' };
+  }
+
+  const transCancelMatch = pathname.match(/^\/transfers\/(\d+)\/cancel$/);
+  if (transCancelMatch && method === 'POST') {
+    const id = parseInt(transCancelMatch[1], 10);
+    const trf = db.transfers.find(t => t.id === id);
+    if (!trf) {
+      const err = new Error('Transfer not found');
+      err.status = 404;
+      throw err;
+    }
+    checkTransition(trf.status, 'canceled', 'Transfer');
+    trf.status = 'canceled';
+    saveDb(db);
+    return { success: true, data: trf, message: 'Transfer canceled successfully' };
   }
 
   const transValMatch = pathname.match(/^\/transfers\/(\d+)\/validate$/);
@@ -729,12 +796,7 @@ export function handleMockRequest(endpoint, options = {}) {
       err.status = 404;
       throw err;
     }
-    if (trf.status === 'done') {
-      const err = new Error('This transfer has already been validated and cannot be applied again');
-      err.status = 400;
-      err.code = 'ALREADY_VALIDATED';
-      throw err;
-    }
+    checkTransition(trf.status, 'done', 'Transfer');
 
     for (const itm of trf.items) {
       const prod = db.products.find(p => p.id === parseInt(itm.product_id, 10));
@@ -886,6 +948,36 @@ export function handleMockRequest(endpoint, options = {}) {
       saveDb(db);
       return { success: true, data: newAdj, message: 'Stock adjustment applied' };
     }
+  }
+
+  const adjCancelMatch = pathname.match(/^\/adjustments\/(\d+)\/cancel$/);
+  if (adjCancelMatch && method === 'POST') {
+    const id = parseInt(adjCancelMatch[1], 10);
+    const adj = db.adjustments.find(a => a.id === id);
+    if (!adj) {
+      const err = new Error('Adjustment not found');
+      err.status = 404;
+      throw err;
+    }
+    checkTransition(adj.status || 'draft', 'canceled', 'Adjustment');
+    adj.status = 'canceled';
+    saveDb(db);
+    return { success: true, data: adj, message: 'Adjustment canceled successfully' };
+  }
+
+  const adjValMatch = pathname.match(/^\/adjustments\/(\d+)\/validate$/);
+  if (adjValMatch && method === 'POST') {
+    const id = parseInt(adjValMatch[1], 10);
+    const adj = db.adjustments.find(a => a.id === id);
+    if (!adj) {
+      const err = new Error('Adjustment not found');
+      err.status = 404;
+      throw err;
+    }
+    checkTransition(adj.status || 'draft', 'done', 'Adjustment');
+    adj.status = 'done';
+    saveDb(db);
+    return { success: true, data: adj, message: 'Adjustment validated successfully' };
   }
 
   if (pathname === '/ledger') {

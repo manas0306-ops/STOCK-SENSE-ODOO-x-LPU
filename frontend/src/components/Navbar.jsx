@@ -1,14 +1,22 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, ShieldCheck, Menu, Boxes } from 'lucide-react';
+import { LogOut, ShieldCheck, Menu, Boxes, Activity, Database } from 'lucide-react';
+import { getOperatingMode, subscribeOperatingMode } from '../services/api';
 
-export default function Navbar({ onMenuToggle }) {
+export default function Navbar({ onMenuToggle, onOpenSearch }) {
   const { user, logout } = useAuth();
+  const [mode, setMode] = useState(getOperatingMode());
+
+  useEffect(() => {
+    return subscribeOperatingMode((newMode) => {
+      setMode(newMode);
+    });
+  }, []);
 
   return (
     <header className="h-16 bg-white border-b border-slate-200 px-4 sm:px-8 flex items-center justify-between sticky top-0 z-30 shadow-xs">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 sm:gap-6">
         <button
           type="button"
           onClick={onMenuToggle}
@@ -25,12 +33,25 @@ export default function Navbar({ onMenuToggle }) {
           <span className="font-bold text-slate-900 text-sm tracking-tight">StockSense</span>
         </div>
 
-        <div className="hidden sm:flex items-center gap-3">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            PostgreSQL Connected
-          </span>
-          <span className="text-xs text-slate-400 font-mono">Port: 5433</span>
+        {/* Dynamic Live / Demo Mode Indicator */}
+        <div className="flex items-center gap-2">
+          {mode === 'LIVE' ? (
+            <span
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"
+              title="Connected to Live PostgreSQL Backend API"
+            >
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              LIVE MODE
+            </span>
+          ) : (
+            <span
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200"
+              title="Zero-Config In-Memory Demo Engine active (safe offline evaluation)"
+            >
+              <span className="h-2 w-2 rounded-full bg-amber-500"></span>
+              DEMO MODE
+            </span>
+          )}
         </div>
       </div>
 
@@ -60,7 +81,7 @@ export default function Navbar({ onMenuToggle }) {
           title="Sign out of workspace"
         >
           <LogOut className="h-4 w-4" />
-          <span className="hidden sm:inline">Logout</span>
+          <span className="hidden sm:inline">Sign Out</span>
         </button>
       </div>
     </header>

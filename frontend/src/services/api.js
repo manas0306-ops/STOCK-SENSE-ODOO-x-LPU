@@ -8,6 +8,26 @@ const isStaticDeploy = typeof window !== 'undefined' && (
 
 const API_BASE = import.meta.env.VITE_API_URL || (isStaticDeploy ? '' : '/api');
 
+let activeOperatingMode = (isStaticDeploy && !import.meta.env.VITE_API_URL) ? 'DEMO' : 'LIVE';
+const modeListeners = new Set();
+
+export function getOperatingMode() {
+  return activeOperatingMode;
+}
+
+export function subscribeOperatingMode(callback) {
+  modeListeners.add(callback);
+  callback(activeOperatingMode);
+  return () => modeListeners.delete(callback);
+}
+
+function setOperatingMode(mode) {
+  if (activeOperatingMode !== mode) {
+    activeOperatingMode = mode;
+    modeListeners.forEach(cb => cb(mode));
+  }
+}
+
 export async function apiRequest(endpoint, options = {}) {
   const token = localStorage.getItem('stocksense_token');
   const headers = {
@@ -21,13 +41,15 @@ export async function apiRequest(endpoint, options = {}) {
     headers,
   };
 
-  if (isStaticDeploy && !import.meta.env.VITE_API_URL) {
+  if (activeOperatingMode === 'DEMO') {
     return handleMockRequest(endpoint, options);
   }
 
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, config);
-    if (response.status === 404 || response.status === 405) {
+    if (response.status === 404 || response.status === 405 || response.status === 502 || response.status === 503) {
+      // Backend not running on local machine -> Seamless fallback to verified Demo Engine
+      setOperatingMode('DEMO');
       return handleMockRequest(endpoint, options);
     }
 
@@ -46,11 +68,13 @@ export async function apiRequest(endpoint, options = {}) {
       throw error;
     }
 
+    setOperatingMode('LIVE');
     return data;
   } catch (err) {
-    if (err.status && err.status !== 404 && err.status !== 405) {
+    if (err.status && err.status !== 404 && err.status !== 405 && err.status !== 502) {
       throw err;
     }
+    setOperatingMode('DEMO');
     return handleMockRequest(endpoint, options);
   }
 }
