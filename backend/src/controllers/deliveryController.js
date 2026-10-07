@@ -1,13 +1,29 @@
 const { getClient, query } = require('../config/db');
 const InventoryEngine = require('../services/inventoryEngine');
+const OperationStateMachine = require('../domain/stateMachine');
+const DecimalUtil = require('../utils/decimal');
 const { ValidationError, NotFoundError, AppError } = require('../utils/errors');
 const { sendSuccess } = require('../utils/response');
 
 class DeliveryController {
   static async list(req, res, next) {
     try {
-      const { status } = req.query;
-      let sql = `
+      const { status, page = 1, limit = 50 } = req.query;
+      const pageNum = Math.max(1, parseInt(page, 10) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
+      const offset = (pageNum - 1) * limitNum;
+
+      let whereSql = 'WHERE 1=1';
+      const params = [];
+      if (status) {
+        params.push(status.toLowerCase());
+        whereSql += ` AND d.status = $${params.length}`;
+      }
+
+      const countRes = await query(`SELECT COUNT(*) as total FROM deliveries d ${whereSql}`, params);
+      const total = parseInt(countRes.rows[0]?.total || 0, 10);
+
+      const sql = `
         SELECT 
           d.id,
           d.reference_no,
@@ -29,19 +45,29 @@ class DeliveryController {
         JOIN warehouses w ON w.id = l.warehouse_id
         LEFT JOIN users u ON u.id = d.created_by
         LEFT JOIN delivery_items di ON di.delivery_id = d.id
-        WHERE 1=1
+        ${whereSql}
+        GROUP BY d.id, d.reference_no, d.customer_id, c.name, d.source_location_id, l.name, w.name, d.status, d.created_by, u.name, d.validated_at, d.created_at
+        ORDER BY d.created_at DESC
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}
       `;
-      const params = [];
-      if (status) {
-        params.push(status);
-        sql += ` AND d.status = $${params.length}`;
-      }
 
-      sql += ` GROUP BY d.id, d.reference_no, d.customer_id, c.name, d.source_location_id, l.name, w.name, d.status, d.created_by, u.name, d.validated_at, d.created_at
-               ORDER BY d.created_at DESC`;
+      const result = await query(sql, [...params, limitNum, offset]);
+      const items = result.rows.map(r => ({
+        ...r,
+        total_quantity: DecimalUtil.parseQuantity(r.total_quantity),
+      }));
 
-      const result = await query(sql, params);
-      return sendSuccess(res, result.rows, 'Deliveries retrieved');
+      return res.status(200).json({
+        success: true,
+        message: 'Deliveries retrieved',
+        data: items,
+        pagination: {
+          total,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(total / limitNum) || 1,
+        },
+      });
     } catch (err) {
       next(err);
     }
@@ -51,7 +77,7 @@ class DeliveryController {
     try {
       const { id } = req.params;
 
-      const delRes = await query(
+      const deliveryRes = await query(
         `SELECT 
           d.id,
           d.reference_no,
@@ -75,13 +101,12 @@ class DeliveryController {
         [id]
       );
 
-      if (delRes.rows.length === 0) {
+      if (deliveryRes.rows.length === 0) {
         throw new NotFoundError('Delivery Order');
       }
 
-      const delivery = delRes.rows[0];
+      const delivery = deliveryRes.rows[0];
 
-      // Fetch items along with current available stock at source location
       const itemsRes = await query(
         `SELECT 
           di.id,
@@ -90,7 +115,7 @@ class DeliveryController {
           p.sku,
           p.unit_of_measure,
           di.quantity,
-          COALESCE(s.quantity, 0) as current_available_stock
+          COALESCE(s.quantity, 0) as available_stock
         FROM delivery_items di
         JOIN products p ON p.id = di.product_id
         LEFT JOIN stocks s ON s.product_id = di.product_id AND s.location_id = $2
@@ -101,7 +126,11 @@ class DeliveryController {
 
       return sendSuccess(res, {
         ...delivery,
-        items: itemsRes.rows,
+        items: itemsRes.rows.map(i => ({
+          ...i,
+          quantity: DecimalUtil.parseQuantity(i.quantity),
+          available_stock: DecimalUtil.parseQuantity(i.available_stock),
+        })),
       }, 'Delivery details retrieved');
     } catch (err) {
       next(err);
@@ -122,7 +151,8 @@ class DeliveryController {
       }
 
       for (const itm of items) {
-        if (!itm.product_id || !itm.quantity || parseFloat(itm.quantity) <= 0) {
+        const qty = DecimalUtil.parseQuantity(itm.quantity);
+        if (!itm.product_id || isNaN(qty) || qty <= 0) {
           throw new ValidationError('Each item must have a valid product and positive quantity');
         }
       }
@@ -130,7 +160,7 @@ class DeliveryController {
       await client.query('BEGIN');
 
       const refNo = `DEL-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
-      const initialStatus = ['draft', 'ready'].includes(status) ? status : 'draft';
+      const initialStatus = status === 'ready' ? 'ready' : 'draft';
 
       const delRes = await client.query(
         `INSERT INTO deliveries (reference_no, customer_id, source_location_id, status, created_by)
@@ -140,11 +170,12 @@ class DeliveryController {
       );
       const delivery = delRes.rows[0];
 
-      for (const itm of items) {
+      const sortedItems = InventoryEngine.sortItems(items);
+      for (const itm of sortedItems) {
         await client.query(
           `INSERT INTO delivery_items (delivery_id, product_id, quantity)
            VALUES ($1, $2, $3)`,
-          [delivery.id, itm.product_id, parseFloat(itm.quantity)]
+          [delivery.id, itm.product_id, DecimalUtil.parseQuantity(itm.quantity)]
         );
       }
 
@@ -159,21 +190,56 @@ class DeliveryController {
   }
 
   static async markReady(req, res, next) {
+    const client = await getClient();
     try {
       const { id } = req.params;
-      const resCheck = await query(`SELECT status FROM deliveries WHERE id = $1`, [id]);
-      if (resCheck.rows.length === 0) throw new NotFoundError('Delivery Order');
-      if (resCheck.rows[0].status === 'done') {
-        throw new AppError('Delivery order is already validated', 400, 'ALREADY_VALIDATED');
-      }
+      await client.query('BEGIN');
 
-      const updateRes = await query(
+      const resCheck = await client.query(`SELECT status FROM deliveries WHERE id = $1 FOR UPDATE`, [id]);
+      if (resCheck.rows.length === 0) throw new NotFoundError('Delivery Order');
+
+      const currentStatus = resCheck.rows[0].status;
+      OperationStateMachine.assertTransition(currentStatus, 'ready', 'Delivery Order');
+
+      const updateRes = await client.query(
         `UPDATE deliveries SET status = 'ready', updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
         [id]
       );
+
+      await client.query('COMMIT');
       return sendSuccess(res, updateRes.rows[0], 'Delivery marked as ready');
     } catch (err) {
+      await client.query('ROLLBACK');
       next(err);
+    } finally {
+      client.release();
+    }
+  }
+
+  static async cancel(req, res, next) {
+    const client = await getClient();
+    try {
+      const { id } = req.params;
+      await client.query('BEGIN');
+
+      const resCheck = await client.query(`SELECT status FROM deliveries WHERE id = $1 FOR UPDATE`, [id]);
+      if (resCheck.rows.length === 0) throw new NotFoundError('Delivery Order');
+
+      const currentStatus = resCheck.rows[0].status;
+      OperationStateMachine.assertTransition(currentStatus, 'canceled', 'Delivery Order');
+
+      const updateRes = await client.query(
+        `UPDATE deliveries SET status = 'canceled', updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
+        [id]
+      );
+
+      await client.query('COMMIT');
+      return sendSuccess(res, updateRes.rows[0], 'Delivery canceled successfully');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      next(err);
+    } finally {
+      client.release();
     }
   }
 
@@ -183,7 +249,7 @@ class DeliveryController {
       const { id } = req.params;
       await client.query('BEGIN');
 
-      // Lock delivery for update (prevents double validation)
+      // Lock delivery for update
       const delRes = await client.query(
         `SELECT * FROM deliveries WHERE id = $1 FOR UPDATE`,
         [id]
@@ -195,10 +261,8 @@ class DeliveryController {
 
       const delivery = delRes.rows[0];
 
-      // Strict Idempotency Check
-      if (delivery.status === 'done') {
-        throw new AppError('This delivery has already been validated and cannot be applied again', 400, 'ALREADY_VALIDATED');
-      }
+      // Enforce State Machine transition
+      OperationStateMachine.assertTransition(delivery.status, 'done', 'Delivery Order');
 
       const itemsRes = await client.query(
         `SELECT * FROM delivery_items WHERE delivery_id = $1`,
@@ -209,8 +273,11 @@ class DeliveryController {
         throw new ValidationError('Cannot validate a delivery order with no items');
       }
 
+      // Sort items deterministically by product_id ASC to eliminate deadlocks
+      const sortedItems = InventoryEngine.sortItems(itemsRes.rows);
+
       const stockResults = [];
-      for (const item of itemsRes.rows) {
+      for (const item of sortedItems) {
         const updateResult = await InventoryEngine.decreaseStock(
           client,
           item.product_id,

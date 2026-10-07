@@ -1,13 +1,29 @@
 const { getClient, query } = require('../config/db');
 const InventoryEngine = require('../services/inventoryEngine');
+const OperationStateMachine = require('../domain/stateMachine');
+const DecimalUtil = require('../utils/decimal');
 const { ValidationError, NotFoundError, AppError } = require('../utils/errors');
 const { sendSuccess } = require('../utils/response');
 
 class ReceiptController {
   static async list(req, res, next) {
     try {
-      const { status } = req.query;
-      let sql = `
+      const { status, page = 1, limit = 50 } = req.query;
+      const pageNum = Math.max(1, parseInt(page, 10) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
+      const offset = (pageNum - 1) * limitNum;
+
+      let whereSql = 'WHERE 1=1';
+      const params = [];
+      if (status) {
+        params.push(status.toLowerCase());
+        whereSql += ` AND r.status = $${params.length}`;
+      }
+
+      const countRes = await query(`SELECT COUNT(*) as total FROM receipts r ${whereSql}`, params);
+      const total = parseInt(countRes.rows[0]?.total || 0, 10);
+
+      const sql = `
         SELECT 
           r.id,
           r.reference_no,
@@ -29,19 +45,30 @@ class ReceiptController {
         JOIN warehouses w ON w.id = l.warehouse_id
         LEFT JOIN users u ON u.id = r.created_by
         LEFT JOIN receipt_items ri ON ri.receipt_id = r.id
-        WHERE 1=1
+        ${whereSql}
+        GROUP BY r.id, r.reference_no, r.supplier_id, s.name, r.destination_location_id, l.name, w.name, r.status, r.created_by, u.name, r.validated_at, r.created_at
+        ORDER BY r.created_at DESC
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}
       `;
-      const params = [];
-      if (status) {
-        params.push(status);
-        sql += ` AND r.status = $${params.length}`;
-      }
 
-      sql += ` GROUP BY r.id, r.reference_no, r.supplier_id, s.name, r.destination_location_id, l.name, w.name, r.status, r.created_by, u.name, r.validated_at, r.created_at
-               ORDER BY r.created_at DESC`;
+      const result = await query(sql, [...params, limitNum, offset]);
+      const items = result.rows.map(r => ({
+        ...r,
+        total_quantity: DecimalUtil.parseQuantity(r.total_quantity),
+      }));
 
-      const result = await query(sql, params);
-      return sendSuccess(res, result.rows, 'Receipts retrieved');
+      // Backward compatible response (frontend array access) with pagination metadata
+      return res.status(200).json({
+        success: true,
+        message: 'Receipts retrieved',
+        data: items,
+        pagination: {
+          total,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(total / limitNum) || 1,
+        },
+      });
     } catch (err) {
       next(err);
     }
@@ -96,7 +123,7 @@ class ReceiptController {
 
       return sendSuccess(res, {
         ...receiptRes.rows[0],
-        items: itemsRes.rows,
+        items: itemsRes.rows.map(i => ({ ...i, quantity: DecimalUtil.parseQuantity(i.quantity) })),
       }, 'Receipt details retrieved');
     } catch (err) {
       next(err);
@@ -117,7 +144,8 @@ class ReceiptController {
       }
 
       for (const itm of items) {
-        if (!itm.product_id || !itm.quantity || parseFloat(itm.quantity) <= 0) {
+        const qty = DecimalUtil.parseQuantity(itm.quantity);
+        if (!itm.product_id || isNaN(qty) || qty <= 0) {
           throw new ValidationError('Each item must have a valid product and positive quantity');
         }
       }
@@ -125,8 +153,7 @@ class ReceiptController {
       await client.query('BEGIN');
 
       const refNo = `REC-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
-
-      const initialStatus = ['draft', 'ready'].includes(status) ? status : 'draft';
+      const initialStatus = status === 'ready' ? 'ready' : 'draft';
 
       const recRes = await client.query(
         `INSERT INTO receipts (reference_no, supplier_id, destination_location_id, status, created_by)
@@ -136,11 +163,13 @@ class ReceiptController {
       );
       const receipt = recRes.rows[0];
 
-      for (const itm of items) {
+      // Deterministic order for item insertion
+      const sortedItems = InventoryEngine.sortItems(items);
+      for (const itm of sortedItems) {
         await client.query(
           `INSERT INTO receipt_items (receipt_id, product_id, quantity)
            VALUES ($1, $2, $3)`,
-          [receipt.id, itm.product_id, parseFloat(itm.quantity)]
+          [receipt.id, itm.product_id, DecimalUtil.parseQuantity(itm.quantity)]
         );
       }
 
@@ -155,21 +184,56 @@ class ReceiptController {
   }
 
   static async markReady(req, res, next) {
+    const client = await getClient();
     try {
       const { id } = req.params;
-      const resCheck = await query(`SELECT status FROM receipts WHERE id = $1`, [id]);
-      if (resCheck.rows.length === 0) throw new NotFoundError('Receipt');
-      if (resCheck.rows[0].status === 'done') {
-        throw new AppError('Receipt is already validated', 400, 'ALREADY_VALIDATED');
-      }
+      await client.query('BEGIN');
 
-      const updateRes = await query(
+      const resCheck = await client.query(`SELECT status FROM receipts WHERE id = $1 FOR UPDATE`, [id]);
+      if (resCheck.rows.length === 0) throw new NotFoundError('Receipt');
+
+      const currentStatus = resCheck.rows[0].status;
+      OperationStateMachine.assertTransition(currentStatus, 'ready', 'Receipt');
+
+      const updateRes = await client.query(
         `UPDATE receipts SET status = 'ready', updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
         [id]
       );
+
+      await client.query('COMMIT');
       return sendSuccess(res, updateRes.rows[0], 'Receipt marked as ready');
     } catch (err) {
+      await client.query('ROLLBACK');
       next(err);
+    } finally {
+      client.release();
+    }
+  }
+
+  static async cancel(req, res, next) {
+    const client = await getClient();
+    try {
+      const { id } = req.params;
+      await client.query('BEGIN');
+
+      const resCheck = await client.query(`SELECT status FROM receipts WHERE id = $1 FOR UPDATE`, [id]);
+      if (resCheck.rows.length === 0) throw new NotFoundError('Receipt');
+
+      const currentStatus = resCheck.rows[0].status;
+      OperationStateMachine.assertTransition(currentStatus, 'canceled', 'Receipt');
+
+      const updateRes = await client.query(
+        `UPDATE receipts SET status = 'canceled', updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
+        [id]
+      );
+
+      await client.query('COMMIT');
+      return sendSuccess(res, updateRes.rows[0], 'Receipt canceled successfully');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      next(err);
+    } finally {
+      client.release();
     }
   }
 
@@ -191,10 +255,8 @@ class ReceiptController {
 
       const receipt = recRes.rows[0];
 
-      // Strict Idempotency Check
-      if (receipt.status === 'done') {
-        throw new AppError('This receipt has already been validated and cannot be applied again', 400, 'ALREADY_VALIDATED');
-      }
+      // Enforce State Machine: only ready can transition to done
+      OperationStateMachine.assertTransition(receipt.status, 'done', 'Receipt');
 
       // Fetch items
       const itemsRes = await client.query(
@@ -206,8 +268,11 @@ class ReceiptController {
         throw new ValidationError('Cannot validate a receipt with no items');
       }
 
+      // Sort items deterministically to avoid deadlocks
+      const sortedItems = InventoryEngine.sortItems(itemsRes.rows);
+
       const stockResults = [];
-      for (const item of itemsRes.rows) {
+      for (const item of sortedItems) {
         const updateResult = await InventoryEngine.increaseStock(
           client,
           item.product_id,

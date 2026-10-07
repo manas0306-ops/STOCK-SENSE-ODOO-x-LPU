@@ -1,11 +1,28 @@
 const { getClient, query } = require('../config/db');
 const InventoryEngine = require('../services/inventoryEngine');
+const OperationStateMachine = require('../domain/stateMachine');
+const DecimalUtil = require('../utils/decimal');
 const { ValidationError, NotFoundError, AppError } = require('../utils/errors');
 const { sendSuccess } = require('../utils/response');
 
 class AdjustmentController {
   static async list(req, res, next) {
     try {
+      const { status, page = 1, limit = 50 } = req.query;
+      const pageNum = Math.max(1, parseInt(page, 10) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
+      const offset = (pageNum - 1) * limitNum;
+
+      let whereSql = 'WHERE 1=1';
+      const params = [];
+      if (status) {
+        params.push(status.toLowerCase());
+        whereSql += ` AND a.status = $${params.length}`;
+      }
+
+      const countRes = await query(`SELECT COUNT(*) as total FROM adjustments a ${whereSql}`, params);
+      const total = parseInt(countRes.rows[0]?.total || 0, 10);
+
       const sql = `
         SELECT 
           a.id,
@@ -30,10 +47,30 @@ class AdjustmentController {
         JOIN locations l ON l.id = a.location_id
         JOIN warehouses w ON w.id = l.warehouse_id
         LEFT JOIN users u ON u.id = a.created_by
+        ${whereSql}
         ORDER BY a.created_at DESC
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}
       `;
-      const result = await query(sql);
-      return sendSuccess(res, result.rows, 'Adjustments retrieved');
+
+      const result = await query(sql, [...params, limitNum, offset]);
+      const items = result.rows.map(r => ({
+        ...r,
+        system_quantity: DecimalUtil.parseQuantity(r.system_quantity),
+        counted_quantity: DecimalUtil.parseQuantity(r.counted_quantity),
+        difference: DecimalUtil.parseQuantity(r.difference),
+      }));
+
+      return res.status(200).json({
+        success: true,
+        message: 'Adjustments retrieved',
+        data: items,
+        pagination: {
+          total,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(total / limitNum) || 1,
+        },
+      });
     } catch (err) {
       next(err);
     }
@@ -72,7 +109,14 @@ class AdjustmentController {
       if (result.rows.length === 0) {
         throw new NotFoundError('Adjustment');
       }
-      return sendSuccess(res, result.rows[0], 'Adjustment retrieved');
+
+      const r = result.rows[0];
+      return sendSuccess(res, {
+        ...r,
+        system_quantity: DecimalUtil.parseQuantity(r.system_quantity),
+        counted_quantity: DecimalUtil.parseQuantity(r.counted_quantity),
+        difference: DecimalUtil.parseQuantity(r.difference),
+      }, 'Adjustment retrieved');
     } catch (err) {
       next(err);
     }
@@ -87,7 +131,7 @@ class AdjustmentController {
         throw new ValidationError('Product and location are required');
       }
 
-      const counted = parseFloat(counted_quantity);
+      const counted = DecimalUtil.parseQuantity(counted_quantity);
       if (isNaN(counted) || counted < 0) {
         throw new ValidationError('Counted quantity must be a non-negative number');
       }
@@ -103,7 +147,7 @@ class AdjustmentController {
         `SELECT quantity FROM stocks WHERE product_id = $1 AND location_id = $2 FOR UPDATE`,
         [product_id, location_id]
       );
-      const systemQuantity = stockRes.rows.length > 0 ? parseFloat(stockRes.rows[0].quantity) : 0.0;
+      const systemQuantity = stockRes.rows.length > 0 ? DecimalUtil.parseQuantity(stockRes.rows[0].quantity) : 0.0;
 
       const refNo = `ADJ-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
       const status = auto_validate ? 'done' : 'draft';
@@ -144,6 +188,33 @@ class AdjustmentController {
     }
   }
 
+  static async cancel(req, res, next) {
+    const client = await getClient();
+    try {
+      const { id } = req.params;
+      await client.query('BEGIN');
+
+      const adjRes = await client.query(`SELECT * FROM adjustments WHERE id = $1 FOR UPDATE`, [id]);
+      if (adjRes.rows.length === 0) throw new NotFoundError('Adjustment');
+
+      const adjustment = adjRes.rows[0];
+      OperationStateMachine.assertTransition(adjustment.status, 'canceled', 'Adjustment');
+
+      const updateRes = await client.query(
+        `UPDATE adjustments SET status = 'canceled' WHERE id = $1 RETURNING *`,
+        [id]
+      );
+
+      await client.query('COMMIT');
+      return sendSuccess(res, updateRes.rows[0], 'Adjustment canceled successfully');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      next(err);
+    } finally {
+      client.release();
+    }
+  }
+
   static async validate(req, res, next) {
     const client = await getClient();
     try {
@@ -160,9 +231,9 @@ class AdjustmentController {
       }
 
       const adjustment = adjRes.rows[0];
-      if (adjustment.status === 'done') {
-        throw new AppError('This adjustment is already validated', 400, 'ALREADY_VALIDATED');
-      }
+
+      // Enforce State Machine transition
+      OperationStateMachine.assertTransition(adjustment.status, 'done', 'Adjustment');
 
       const stockUpdate = await InventoryEngine.setStock(
         client,

@@ -6,7 +6,10 @@ const errorHandler = require('./middleware/errorHandler');
 const app = express();
 const PORT = env.PORT;
 
+const requestIdMiddleware = require('./middleware/requestId');
+
 // Middlewares
+app.use(requestIdMiddleware);
 app.use(cors({
   origin: env.CORS_ORIGIN,
   credentials: true,

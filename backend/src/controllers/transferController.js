@@ -1,13 +1,29 @@
 const { getClient, query } = require('../config/db');
 const InventoryEngine = require('../services/inventoryEngine');
+const OperationStateMachine = require('../domain/stateMachine');
+const DecimalUtil = require('../utils/decimal');
 const { ValidationError, NotFoundError, AppError } = require('../utils/errors');
 const { sendSuccess } = require('../utils/response');
 
 class TransferController {
   static async list(req, res, next) {
     try {
-      const { status } = req.query;
-      let sql = `
+      const { status, page = 1, limit = 50 } = req.query;
+      const pageNum = Math.max(1, parseInt(page, 10) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
+      const offset = (pageNum - 1) * limitNum;
+
+      let whereSql = 'WHERE 1=1';
+      const params = [];
+      if (status) {
+        params.push(status.toLowerCase());
+        whereSql += ` AND t.status = $${params.length}`;
+      }
+
+      const countRes = await query(`SELECT COUNT(*) as total FROM transfers t ${whereSql}`, params);
+      const total = parseInt(countRes.rows[0]?.total || 0, 10);
+
+      const sql = `
         SELECT 
           t.id,
           t.reference_no,
@@ -31,21 +47,31 @@ class TransferController {
         JOIN warehouses dw ON dw.id = dl.warehouse_id
         LEFT JOIN users u ON u.id = t.created_by
         LEFT JOIN transfer_items ti ON ti.transfer_id = t.id
-        WHERE 1=1
+        ${whereSql}
+        GROUP BY t.id, t.reference_no, t.source_location_id, sl.name, sw.name, 
+                 t.destination_location_id, dl.name, dw.name, t.status, t.created_by, 
+                 u.name, t.validated_at, t.created_at
+        ORDER BY t.created_at DESC
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}
       `;
-      const params = [];
-      if (status) {
-        params.push(status);
-        sql += ` AND t.status = $${params.length}`;
-      }
 
-      sql += ` GROUP BY t.id, t.reference_no, t.source_location_id, sl.name, sw.name, 
-                        t.destination_location_id, dl.name, dw.name, t.status, t.created_by, 
-                        u.name, t.validated_at, t.created_at
-               ORDER BY t.created_at DESC`;
+      const result = await query(sql, [...params, limitNum, offset]);
+      const items = result.rows.map(r => ({
+        ...r,
+        total_quantity: DecimalUtil.parseQuantity(r.total_quantity),
+      }));
 
-      const result = await query(sql, params);
-      return sendSuccess(res, result.rows, 'Transfers retrieved');
+      return res.status(200).json({
+        success: true,
+        message: 'Transfers retrieved',
+        data: items,
+        pagination: {
+          total,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: Math.ceil(total / limitNum) || 1,
+        },
+      });
     } catch (err) {
       next(err);
     }
@@ -106,7 +132,11 @@ class TransferController {
 
       return sendSuccess(res, {
         ...transfer,
-        items: itemsRes.rows,
+        items: itemsRes.rows.map(i => ({
+          ...i,
+          quantity: DecimalUtil.parseQuantity(i.quantity),
+          source_available_stock: DecimalUtil.parseQuantity(i.source_available_stock),
+        })),
       }, 'Transfer details retrieved');
     } catch (err) {
       next(err);
@@ -131,7 +161,8 @@ class TransferController {
       }
 
       for (const itm of items) {
-        if (!itm.product_id || !itm.quantity || parseFloat(itm.quantity) <= 0) {
+        const qty = DecimalUtil.parseQuantity(itm.quantity);
+        if (!itm.product_id || isNaN(qty) || qty <= 0) {
           throw new ValidationError('Each item must have a valid product and positive quantity');
         }
       }
@@ -139,7 +170,7 @@ class TransferController {
       await client.query('BEGIN');
 
       const refNo = `TRF-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
-      const initialStatus = ['draft', 'ready'].includes(status) ? status : 'draft';
+      const initialStatus = status === 'ready' ? 'ready' : 'draft';
 
       const trfRes = await client.query(
         `INSERT INTO transfers (reference_no, source_location_id, destination_location_id, status, created_by)
@@ -149,11 +180,12 @@ class TransferController {
       );
       const transfer = trfRes.rows[0];
 
-      for (const itm of items) {
+      const sortedItems = InventoryEngine.sortItems(items);
+      for (const itm of sortedItems) {
         await client.query(
           `INSERT INTO transfer_items (transfer_id, product_id, quantity)
            VALUES ($1, $2, $3)`,
-          [transfer.id, itm.product_id, parseFloat(itm.quantity)]
+          [transfer.id, itm.product_id, DecimalUtil.parseQuantity(itm.quantity)]
         );
       }
 
@@ -168,21 +200,56 @@ class TransferController {
   }
 
   static async markReady(req, res, next) {
+    const client = await getClient();
     try {
       const { id } = req.params;
-      const resCheck = await query(`SELECT status FROM transfers WHERE id = $1`, [id]);
-      if (resCheck.rows.length === 0) throw new NotFoundError('Internal Transfer');
-      if (resCheck.rows[0].status === 'done') {
-        throw new AppError('Transfer is already validated', 400, 'ALREADY_VALIDATED');
-      }
+      await client.query('BEGIN');
 
-      const updateRes = await query(
+      const resCheck = await client.query(`SELECT status FROM transfers WHERE id = $1 FOR UPDATE`, [id]);
+      if (resCheck.rows.length === 0) throw new NotFoundError('Internal Transfer');
+
+      const currentStatus = resCheck.rows[0].status;
+      OperationStateMachine.assertTransition(currentStatus, 'ready', 'Internal Transfer');
+
+      const updateRes = await client.query(
         `UPDATE transfers SET status = 'ready', updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
         [id]
       );
+
+      await client.query('COMMIT');
       return sendSuccess(res, updateRes.rows[0], 'Transfer marked as ready');
     } catch (err) {
+      await client.query('ROLLBACK');
       next(err);
+    } finally {
+      client.release();
+    }
+  }
+
+  static async cancel(req, res, next) {
+    const client = await getClient();
+    try {
+      const { id } = req.params;
+      await client.query('BEGIN');
+
+      const resCheck = await client.query(`SELECT status FROM transfers WHERE id = $1 FOR UPDATE`, [id]);
+      if (resCheck.rows.length === 0) throw new NotFoundError('Internal Transfer');
+
+      const currentStatus = resCheck.rows[0].status;
+      OperationStateMachine.assertTransition(currentStatus, 'canceled', 'Internal Transfer');
+
+      const updateRes = await client.query(
+        `UPDATE transfers SET status = 'canceled', updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
+        [id]
+      );
+
+      await client.query('COMMIT');
+      return sendSuccess(res, updateRes.rows[0], 'Transfer canceled successfully');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      next(err);
+    } finally {
+      client.release();
     }
   }
 
@@ -204,9 +271,8 @@ class TransferController {
 
       const transfer = trfRes.rows[0];
 
-      if (transfer.status === 'done') {
-        throw new AppError('This transfer has already been validated and cannot be applied again', 400, 'ALREADY_VALIDATED');
-      }
+      // Enforce State Machine transition
+      OperationStateMachine.assertTransition(transfer.status, 'done', 'Internal Transfer');
 
       const itemsRes = await client.query(
         `SELECT * FROM transfer_items WHERE transfer_id = $1`,
@@ -217,8 +283,11 @@ class TransferController {
         throw new ValidationError('Cannot validate a transfer with no items');
       }
 
+      // Sort items deterministically by product_id ASC
+      const sortedItems = InventoryEngine.sortItems(itemsRes.rows);
+
       const transferResults = [];
-      for (const item of itemsRes.rows) {
+      for (const item of sortedItems) {
         const result = await InventoryEngine.transferStock(
           client,
           item.product_id,
